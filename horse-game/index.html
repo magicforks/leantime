@@ -89,6 +89,9 @@ canvas { display: block; border: 2px solid #4A7C2F; }
 
 // ===== CONSTANTS =====
 const TILE = 48;
+const ISO_W = 96;
+const ISO_H = 48;
+const ISO_Z = 32;
 const WORLD_W = 70;
 const WORLD_H = 70;
 const CANVAS_W = 900;
@@ -281,140 +284,171 @@ class Horse {
 }
 
 // ===== DRAW HORSE =====
-function drawHorse(ctx, x, y, color, direction, t, equipment, scale) {
+function drawHorse(ctx, sx, sy, color, direction, t, equipment, scale) {
   scale = scale || 1;
   ctx.save();
-  ctx.translate(x, y);
+  ctx.translate(sx, sy);
   ctx.scale(scale, scale);
 
-  const dx = direction==='right'?1:direction==='left'?-1:0;
-  const dy = direction==='down'?1:direction==='up'?-1:0;
+  const moving = t > 0;
+  const legAnim = moving ? Math.sin(t * 5.5) * 7 : 0;
+  const bodyBob = moving ? Math.abs(Math.sin(t * 5.5)) * 2.5 : 0;
 
-  // Blanket first (under saddle)
+  // Shadow on ground
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(2, 8, 22, 7, -0.2, 0, Math.PI*2);
+  ctx.fill();
+
+  let angle = 0;
+  if (direction === 'left') angle = 0.4;
+  else if (direction === 'right') angle = -0.4;
+  else if (direction === 'up') angle = 0.2;
+  else angle = -0.2;
+
+  ctx.rotate(angle);
+
+  // Back legs (draw before body)
+  ctx.strokeStyle = shadeColor(color, -25);
+  ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-10, 2 - bodyBob); ctx.lineTo(-12 + legAnim*0.3, 18 - bodyBob + Math.abs(legAnim)*0.2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-2, 4 - bodyBob); ctx.lineTo(-1 - legAnim*0.3, 20 - bodyBob); ctx.stroke();
+
+  // Blanket (under body)
   if (equipment && equipment.blanket) {
-    ctx.save();
     ctx.fillStyle = equipment.blanket.color;
-    ctx.globalAlpha = 0.7;
-    ctx.beginPath();
-    ctx.ellipse(dx*4, dy*2, 22, 12, Math.atan2(dy,dx), 0, Math.PI*2);
-    ctx.fill();
+    ctx.globalAlpha = 0.75;
+    ctx.beginPath(); ctx.ellipse(2, -4 - bodyBob, 16, 9, 0, 0, Math.PI*2); ctx.fill();
     ctx.globalAlpha = 1;
-    ctx.restore();
   }
 
   // Body
   ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.ellipse(dx*4, dy*2, 20, 11, Math.atan2(dy,dx)*0.5, 0, Math.PI*2);
-  ctx.fill();
-  ctx.strokeStyle = shadeColor(color, -30);
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(2, -3 - bodyBob, 20, 11, 0, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = shadeColor(color, -35); ctx.lineWidth = 1; ctx.stroke();
 
-  // Neck
-  const neckX = dx*14 + dy*2;
-  const neckY = dy*14 - dx*2;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 7;
-  ctx.beginPath();
-  ctx.moveTo(dx*8, dy*4);
-  ctx.lineTo(neckX, neckY);
-  ctx.stroke();
-
-  // Head
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.ellipse(dx*17 + dy*3, dy*16 - dx*2, 8, 5, Math.atan2(dy,dx)+0.3, 0, Math.PI*2);
-  ctx.fill();
-  ctx.strokeStyle = shadeColor(color,-30);
-  ctx.lineWidth=1;
-  ctx.stroke();
-
-  // Eye
-  ctx.fillStyle = '#111';
-  ctx.beginPath();
-  ctx.arc(dx*18+dy*5, dy*15-dx, 1.5, 0, Math.PI*2);
-  ctx.fill();
-
-  // Nostril
-  ctx.fillStyle = shadeColor(color,-40);
-  ctx.beginPath();
-  ctx.arc(dx*21+dy*2, dy*18-dx, 1, 0, Math.PI*2);
-  ctx.fill();
-
-  // Mane
-  ctx.strokeStyle = shadeColor(color, -50);
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(dx*8, dy*2);
-  ctx.quadraticCurveTo(neckX+dy*3, neckY-dx*3, dx*17+dy*5, dy*12-dx*3);
-  ctx.stroke();
-
-  // Tail
-  const tailX = -dx*16 - dy*4;
-  const tailY = -dy*16 + dx*4;
-  ctx.strokeStyle = shadeColor(color,-40);
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(-dx*12, -dy*2);
-  ctx.quadraticCurveTo(tailX, tailY, tailX+dx*3+dy*6, tailY+dy*3-dx*6);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(-dx*12, -dy*2);
-  ctx.quadraticCurveTo(tailX-dy*3, tailY+dx*3, tailX-dx*4-dy*5, tailY-dy*4+dx*5);
-  ctx.stroke();
-
-  // Legs (4 legs)
-  const legColor = shadeColor(color,-20);
-  ctx.strokeStyle = legColor;
-  ctx.lineWidth = 4;
-  const legOffsets = [
-    {bx: dx*10+dy*7, by: dy*10-dx*7},
-    {bx: dx*10-dy*7, by: dy*10+dx*7},
-    {bx:-dx*4+dy*7, by:-dy*4-dx*7},
-    {bx:-dx*4-dy*7, by:-dy*4+dx*7}
-  ];
-  const legAnims = [
-    Math.sin(t*5)*8,
-    -Math.sin(t*5)*8,
-    -Math.sin(t*5)*8,
-    Math.sin(t*5)*8
-  ];
-  for (let i=0;i<4;i++) {
-    const lb = legOffsets[i];
-    const anim = legAnims[i];
-    ctx.beginPath();
-    ctx.moveTo(lb.bx, lb.by);
-    const footX = lb.bx + dy*anim*0.3;
-    const footY = lb.by + 14 + (direction==='left'||direction==='right'?Math.abs(anim)*0.2:0);
-    ctx.lineTo(footX, footY);
-    ctx.stroke();
-    // Hoof
-    ctx.fillStyle = '#222';
-    ctx.beginPath();
-    ctx.ellipse(footX, footY+1, 2.5, 1.5, 0, 0, Math.PI*2);
-    ctx.fill();
-  }
+  // Body shading (isometric lighting from top-left)
+  const bodyGrad = ctx.createLinearGradient(-20, -14, 20, 8);
+  bodyGrad.addColorStop(0, shadeColor(color, 20));
+  bodyGrad.addColorStop(1, shadeColor(color, -15));
+  ctx.fillStyle = bodyGrad;
+  ctx.globalAlpha = 0.35;
+  ctx.beginPath(); ctx.ellipse(2, -3 - bodyBob, 20, 11, 0, 0, Math.PI*2); ctx.fill();
+  ctx.globalAlpha = 1;
 
   // Saddle
   if (equipment && equipment.saddle) {
     ctx.fillStyle = equipment.saddle.color;
-    ctx.beginPath();
-    ctx.ellipse(dx*2, dy*1-7, 10, 5, Math.atan2(dy,dx)*0.5, 0, Math.PI*2);
-    ctx.fill();
-    ctx.strokeStyle = shadeColor(equipment.saddle.color,-30);
-    ctx.lineWidth=1;
-    ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(4, -9 - bodyBob, 9, 5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = shadeColor(equipment.saddle.color, -30); ctx.lineWidth = 1; ctx.stroke();
   }
+
+  // Front legs
+  ctx.strokeStyle = shadeColor(color, -20);
+  ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(10, 0 - bodyBob); ctx.lineTo(12 - legAnim*0.3, 16 - bodyBob); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(16, 2 - bodyBob); ctx.lineTo(18 + legAnim*0.3, 18 - bodyBob); ctx.stroke();
+
+  // Hooves
+  ctx.fillStyle = '#222';
+  [[-12 + legAnim*0.3, 19 - bodyBob], [-1 - legAnim*0.3, 21-bodyBob],
+   [12 - legAnim*0.3, 17-bodyBob], [18 + legAnim*0.3, 19-bodyBob]].forEach(([hx,hy]) => {
+    ctx.beginPath(); ctx.ellipse(hx, hy+1, 3, 2, 0, 0, Math.PI*2); ctx.fill();
+  });
+
+  // Neck
+  ctx.strokeStyle = color; ctx.lineWidth = 9;
+  ctx.beginPath(); ctx.moveTo(14, -6 - bodyBob); ctx.quadraticCurveTo(20, -14-bodyBob, 22, -20-bodyBob); ctx.stroke();
+
+  // Head
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.ellipse(25, -22 - bodyBob, 8, 5.5, 0.35, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = shadeColor(color,-30); ctx.lineWidth=1; ctx.stroke();
+
+  // Nose/muzzle
+  ctx.fillStyle = shadeColor(color, 10);
+  ctx.beginPath(); ctx.ellipse(30, -18 - bodyBob, 4.5, 3.5, 0.3, 0, Math.PI*2); ctx.fill();
+
+  // Nostril
+  ctx.fillStyle = shadeColor(color, -40);
+  ctx.beginPath(); ctx.arc(32, -17 - bodyBob, 1.2, 0, Math.PI*2); ctx.fill();
+
+  // Eye
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(23, -24 - bodyBob, 2, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#333';
+  ctx.beginPath(); ctx.arc(23, -24 - bodyBob, 0.8, 0, Math.PI*2); ctx.fill();
+
+  // Mane
+  ctx.strokeStyle = shadeColor(color, -55); ctx.lineWidth = 3.5;
+  ctx.beginPath(); ctx.moveTo(15, -8-bodyBob); ctx.quadraticCurveTo(18, -16-bodyBob, 22, -20-bodyBob); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(12, -6-bodyBob); ctx.quadraticCurveTo(15, -14-bodyBob, 20, -18-bodyBob); ctx.stroke();
+
+  // Tail
+  ctx.strokeStyle = shadeColor(color, -45); ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(-16, -2-bodyBob); ctx.quadraticCurveTo(-26, 6-bodyBob, -24, 18-bodyBob); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-16, -2-bodyBob); ctx.quadraticCurveTo(-28, 4-bodyBob, -30, 0-bodyBob); ctx.stroke();
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-16, -2-bodyBob); ctx.quadraticCurveTo(-25, 8-bodyBob, -20, 22-bodyBob); ctx.stroke();
 
   // Bridle
   if (equipment && equipment.bridle) {
-    ctx.strokeStyle = equipment.bridle.color;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(dx*17+dy*3, dy*15-dx, 5, 0, Math.PI*2);
-    ctx.stroke();
+    ctx.strokeStyle = equipment.bridle.color; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(25, -21-bodyBob, 6, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(22,-16-bodyBob); ctx.lineTo(24,-13-bodyBob); ctx.stroke();
   }
+
+  ctx.restore();
+}
+
+// ===== DRAW RIDER =====
+function drawRider(ctx, sx, sy, direction, outfit) {
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  let angle = direction==='left'?0.4:direction==='right'?-0.4:direction==='up'?0.2:-0.2;
+  ctx.rotate(angle);
+
+  // Boots/lower legs
+  ctx.fillStyle = outfit.bootsColor || '#2c1810';
+  ctx.fillRect(-5, -10, 4, 7);
+  ctx.fillRect(3, -10, 4, 7);
+
+  // Pants
+  ctx.fillStyle = outfit.pantsColor || '#FFFFFF';
+  ctx.beginPath();
+  ctx.ellipse(0, -18, 7, 5, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillRect(-5, -22, 10, 8);
+
+  // Jacket body
+  ctx.fillStyle = outfit.jacketColor || '#1a3a5c';
+  ctx.fillRect(-6, -36, 13, 16);
+
+  // Left arm
+  ctx.fillStyle = shadeColor(outfit.jacketColor || '#1a3a5c', -20);
+  ctx.fillRect(-10, -36, 4, 10);
+  // Right arm
+  ctx.fillStyle = outfit.jacketColor || '#1a3a5c';
+  ctx.fillRect(7, -35, 4, 10);
+
+  // Hands
+  ctx.fillStyle = '#F5C5A0';
+  ctx.beginPath(); ctx.arc(-8, -26, 2.5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(9, -25, 2.5, 0, Math.PI*2); ctx.fill();
+
+  // Head/face
+  ctx.fillStyle = '#F5C5A0';
+  ctx.beginPath(); ctx.arc(1, -44, 6, 0, Math.PI*2); ctx.fill();
+
+  // Helmet
+  ctx.fillStyle = outfit.helmetColor || '#1a1a1a';
+  ctx.beginPath(); ctx.arc(1, -44, 6.5, Math.PI, 0); ctx.fill();
+  ctx.fillRect(-7, -44, 15, 3);
+
+  // Helmet brim
+  ctx.fillStyle = shadeColor(outfit.helmetColor || '#1a1a1a', -15);
+  ctx.fillRect(-8, -44, 17, 2);
 
   ctx.restore();
 }
@@ -429,38 +463,51 @@ function shadeColor(hex, amount) {
   return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
 }
 
-// ===== DRAW RIDER =====
-function drawRider(ctx, x, y, direction, outfit) {
-  ctx.save();
-  ctx.translate(x, y);
-  const dx = direction==='right'?1:direction==='left'?-1:0;
+// World tile → screen pixel (isometric projection)
+function tileToScreen(tx, ty) {
+  return {
+    x: (tx - ty) * (ISO_W / 2) - cam.x + CANVAS_W / 2,
+    y: (tx + ty) * (ISO_H / 2) - cam.y + CANVAS_H / 3
+  };
+}
+function worldToScreen(wx, wy) {
+  return tileToScreen(wx / TILE, wy / TILE);
+}
 
-  // Boots
-  ctx.fillStyle = outfit.bootsColor || '#2c1810';
-  ctx.fillRect(-5+dx*2, -22, 4, 7);
-  ctx.fillRect(3+dx*2, -22, 4, 7);
-  // Pants
-  ctx.fillStyle = outfit.pantsColor || '#FFFFFF';
-  ctx.fillRect(-6+dx, -34, 14, 14);
-  // Jacket
-  ctx.fillStyle = outfit.jacketColor || '#1a3a5c';
-  ctx.fillRect(-6+dx, -46, 14, 14);
-  // Arms
-  ctx.fillRect(-10+dx, -46, 4, 10);
-  ctx.fillRect(8+dx, -46, 4, 10);
-  // Head
-  ctx.fillStyle = '#F5C5A0';
+function drawIsoDiamond(ctx, sx, sy, color, strokeColor) {
   ctx.beginPath();
-  ctx.arc(dx*1, -52, 6, 0, Math.PI*2);
+  ctx.moveTo(sx,          sy - ISO_H/2);
+  ctx.lineTo(sx + ISO_W/2, sy);
+  ctx.lineTo(sx,          sy + ISO_H/2);
+  ctx.lineTo(sx - ISO_W/2, sy);
+  ctx.closePath();
+  ctx.fillStyle = color;
   ctx.fill();
-  // Helmet
-  ctx.fillStyle = outfit.helmetColor || '#1a1a1a';
-  ctx.beginPath();
-  ctx.arc(dx*1, -52, 6.5, Math.PI, 0);
-  ctx.fill();
-  ctx.fillRect(-6+dx, -52, 13, 3);
+  if (strokeColor) { ctx.strokeStyle = strokeColor; ctx.lineWidth = 0.5; ctx.stroke(); }
+}
 
-  ctx.restore();
+function drawIsoBlock(ctx, sx, sy, topColor, wallH) {
+  const h = wallH || ISO_Z;
+  // Left face (darkest)
+  ctx.beginPath();
+  ctx.moveTo(sx - ISO_W/2, sy - h);
+  ctx.lineTo(sx, sy - h + ISO_H/2);
+  ctx.lineTo(sx, sy + ISO_H/2);
+  ctx.lineTo(sx - ISO_W/2, sy);
+  ctx.closePath();
+  ctx.fillStyle = shadeColor(topColor, -60);
+  ctx.fill();
+  // Right face
+  ctx.beginPath();
+  ctx.moveTo(sx, sy - h + ISO_H/2);
+  ctx.lineTo(sx + ISO_W/2, sy - h);
+  ctx.lineTo(sx + ISO_W/2, sy);
+  ctx.lineTo(sx, sy + ISO_H/2);
+  ctx.closePath();
+  ctx.fillStyle = shadeColor(topColor, -35);
+  ctx.fill();
+  // Top face
+  drawIsoDiamond(ctx, sx, sy - h, topColor, 'rgba(0,0,0,0.1)');
 }
 
 // ===== PLAYER =====
@@ -1367,130 +1414,101 @@ const UI = {
   }
 };
 
-// ===== TILE RENDERER =====
-function drawTile(ctx, tileType, px, py, time) {
-  const S=TILE;
+// ===== ISOMETRIC TILE RENDERER =====
+// sx,sy = screen center of the diamond tile
+function drawTile(ctx, tileType, sx, sy, time) {
   switch(tileType) {
     case T.GRASS:
-      ctx.fillStyle='#4A7C2F'; ctx.fillRect(px,py,S,S);
+      drawIsoDiamond(ctx, sx, sy, '#4A7C2F', 'rgba(0,0,0,0.08)');
       break;
     case T.FLOWER:
-      ctx.fillStyle='#4A7C2F'; ctx.fillRect(px,py,S,S);
-      const fc=['#FF6B8A','#FFD700','#9B59B6','#FF8C00','#FF1493'];
-      for (let i=0;i<4;i++) {
+      drawIsoDiamond(ctx, sx, sy, '#4A7C2F', 'rgba(0,0,0,0.08)');
+      {const fc=['#FF6B8A','#FFD700','#FF69B4','#FF8C00'];
+      for(let i=0;i<3;i++){
         ctx.fillStyle=fc[i%fc.length];
-        ctx.beginPath();
-        ctx.arc(px+10+i*10, py+28+((i*7)%12), 4, 0, Math.PI*2);
-        ctx.fill();
+        ctx.beginPath();ctx.arc(sx-14+i*14,sy-4+i*3,3,0,Math.PI*2);ctx.fill();
         ctx.fillStyle='#FFD700';
-        ctx.beginPath();
-        ctx.arc(px+10+i*10, py+28+((i*7)%12), 2, 0, Math.PI*2);
-        ctx.fill();
-      }
+        ctx.beginPath();ctx.arc(sx-14+i*14,sy-4+i*3,1.5,0,Math.PI*2);ctx.fill();
+      }}
       break;
     case T.DIRT:
-      ctx.fillStyle='#8B6914'; ctx.fillRect(px,py,S,S);
-      ctx.fillStyle='#7A5C10';
-      for(let i=0;i<3;i++) ctx.fillRect(px+5+i*14,py+10+i*10,8,3);
+      drawIsoDiamond(ctx, sx, sy, '#8B6914', 'rgba(0,0,0,0.1)');
+      ctx.fillStyle='rgba(0,0,0,0.1)';
+      ctx.beginPath();ctx.ellipse(sx-8,sy+2,6,2,0.3,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.ellipse(sx+10,sy-2,5,2,0.2,0,Math.PI*2);ctx.fill();
       break;
     case T.STABLE_FLOOR:
-      ctx.fillStyle='#D4A574'; ctx.fillRect(px,py,S,S);
-      ctx.fillStyle='#C49060';
-      for(let i=0;i<3;i++) {
-        ctx.fillRect(px+i*16,py,2,S);
-        ctx.fillRect(px,py+i*16,S,2);
-      }
+      drawIsoDiamond(ctx, sx, sy, '#D4A574', 'rgba(0,0,0,0.1)');
+      ctx.strokeStyle='#C49060'; ctx.lineWidth=0.8;
+      ctx.beginPath();ctx.moveTo(sx-ISO_W/2,sy);ctx.lineTo(sx,sy-ISO_H/2);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(sx,sy+ISO_H/2);ctx.lineTo(sx+ISO_W/2,sy);ctx.stroke();
       break;
     case T.STALL:
-      ctx.fillStyle='#D4A574'; ctx.fillRect(px,py,S,S);
-      ctx.strokeStyle='#5C3A1A'; ctx.lineWidth=3;
-      ctx.strokeRect(px+2,py+2,S-4,S-4);
-      ctx.beginPath(); ctx.moveTo(px+2,py+S/2); ctx.lineTo(px+S-2,py+S/2); ctx.stroke();
-      ctx.lineWidth=1;
+      drawIsoDiamond(ctx, sx, sy, '#C4944A', 'rgba(0,0,0,0.12)');
+      ctx.strokeStyle='#5C3A1A'; ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(sx,sy-ISO_H/2);ctx.lineTo(sx,sy+ISO_H/2);ctx.stroke();
       break;
     case T.WALL:
-      ctx.fillStyle='#696969'; ctx.fillRect(px,py,S,S);
-      ctx.fillStyle='#555';
-      for(let row=0;row<4;row++) {
-        for(let col=0;col<3;col++) {
-          const bx=px+(col*16)+(row%2)*8;
-          const by=py+row*12;
-          ctx.fillRect(bx+1,by+1,14,10);
-        }
-      }
-      ctx.fillStyle='#7a7a7a';
-      for(let i=0;i<4;i++) ctx.fillRect(px,py+i*12,S,1);
+      drawIsoBlock(ctx, sx, sy, '#8a8a8a', ISO_Z * 1.6);
       break;
     case T.FENCE:
-      ctx.fillStyle='#4A7C2F'; ctx.fillRect(px,py,S,S);
+      drawIsoDiamond(ctx, sx, sy, '#4A7C2F', 'rgba(0,0,0,0.05)');
+      // Wooden post
       ctx.fillStyle='#8B4513';
-      // Post
-      ctx.fillRect(px+S/2-3,py+4,6,S-8);
+      ctx.fillRect(sx-3, sy-ISO_Z*0.7, 6, ISO_Z*0.7);
       // Rails
-      ctx.fillRect(px,py+10,S,4);
-      ctx.fillRect(px,py+28,S,4);
-      // Post caps
-      ctx.fillStyle='#6B3410';
-      ctx.fillRect(px+S/2-4,py+2,8,6);
+      ctx.fillStyle='#A0522D';
+      ctx.fillRect(sx-ISO_W/2, sy-ISO_Z*0.5, ISO_W, 3);
+      ctx.fillRect(sx-ISO_W/2, sy-ISO_Z*0.25, ISO_W, 3);
       break;
     case T.TREE:
-      ctx.fillStyle='#4A7C2F'; ctx.fillRect(px,py,S,S);
+      drawIsoDiamond(ctx, sx, sy, '#3d6b22', 'rgba(0,0,0,0.05)');
       // Trunk
       ctx.fillStyle='#5C3317';
-      ctx.fillRect(px+S/2-5,py+28,10,22);
-      // Canopy
+      ctx.fillRect(sx-5, sy-ISO_Z*2.8, 10, ISO_Z*2.3);
+      // Canopy layers
+      ctx.fillStyle='#1e5c0e';
+      ctx.beginPath();ctx.arc(sx, sy-ISO_Z*3.5, 24, 0, Math.PI*2);ctx.fill();
       ctx.fillStyle='#2d7a1a';
-      ctx.beginPath();
-      ctx.arc(px+S/2, py+22, 20, 0, Math.PI*2);
-      ctx.fill();
+      ctx.beginPath();ctx.arc(sx-7, sy-ISO_Z*4, 18, 0, Math.PI*2);ctx.fill();
       ctx.fillStyle='#3a9a22';
-      ctx.beginPath();
-      ctx.arc(px+S/2-4, py+18, 14, 0, Math.PI*2);
-      ctx.fill();
-      ctx.fillStyle='#228B22';
-      ctx.beginPath();
-      ctx.arc(px+S/2+4, py+16, 12, 0, Math.PI*2);
-      ctx.fill();
+      ctx.beginPath();ctx.arc(sx+5, sy-ISO_Z*3.8, 15, 0, Math.PI*2);ctx.fill();
+      ctx.fillStyle='#4ab82a';
+      ctx.beginPath();ctx.arc(sx-2, sy-ISO_Z*4.5, 12, 0, Math.PI*2);ctx.fill();
       break;
     case T.WATER:
-      ctx.fillStyle='#4169E1'; ctx.fillRect(px,py,S,S);
-      ctx.fillStyle='rgba(135,206,250,0.4)';
-      for(let i=0;i<3;i++) {
-        const wx=px+6+i*14+Math.sin(time*1.5+i)*4;
-        const wy=py+12+i*12+Math.cos(time+i)*3;
+      drawIsoDiamond(ctx, sx, sy, '#2255CC', 'rgba(0,0,0,0.1)');
+      ctx.fillStyle=`rgba(100,180,255,${0.3+Math.sin(time*1.5)*0.1})`;
+      for(let i=0;i<2;i++){
         ctx.beginPath();
-        ctx.ellipse(wx,wy,8,3,0,0,Math.PI*2);
+        ctx.ellipse(sx-14+i*28+Math.sin(time+i)*4, sy+Math.cos(time*0.8+i)*2, 12, 4, 0.2, 0, Math.PI*2);
         ctx.fill();
       }
       break;
     case T.ARENA:
-      ctx.fillStyle='#C4A35A'; ctx.fillRect(px,py,S,S);
-      ctx.fillStyle='#B8953A';
-      for(let i=0;i<4;i++) ctx.fillRect(px,py+i*12,S,1);
+      drawIsoDiamond(ctx, sx, sy, '#C4A35A', 'rgba(0,0,0,0.06)');
+      ctx.strokeStyle='#B8953A'; ctx.lineWidth=0.5;
+      ctx.beginPath();ctx.moveTo(sx-ISO_W/4,sy-ISO_H/4);ctx.lineTo(sx+ISO_W/4,sy+ISO_H/4);ctx.stroke();
       break;
     case T.PATH:
-      ctx.fillStyle='#A0896B'; ctx.fillRect(px,py,S,S);
-      ctx.fillStyle='#907858';
-      ctx.fillRect(px,py+S/2-1,S,2);
+      drawIsoDiamond(ctx, sx, sy, '#A0896B', 'rgba(0,0,0,0.07)');
+      ctx.strokeStyle='#907858'; ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(sx-ISO_W/3,sy);ctx.lineTo(sx+ISO_W/3,sy);ctx.stroke();
       break;
     case T.PADDOCK:
-      ctx.fillStyle='#5a9040'; ctx.fillRect(px,py,S,S);
-      // Slight texture
-      ctx.fillStyle='#509038';
-      if((Math.floor(px/TILE)+Math.floor(py/TILE))%2===0) ctx.fillRect(px+2,py+2,S-4,S-4);
+      drawIsoDiamond(ctx, sx, sy, '#5a9040', 'rgba(0,0,0,0.07)');
       break;
     default:
-      ctx.fillStyle='#4A7C2F'; ctx.fillRect(px,py,S,S);
+      drawIsoDiamond(ctx, sx, sy, '#4A7C2F', 'rgba(0,0,0,0.05)');
   }
 }
 
 // ===== CAMERA =====
-const camera = { x:0, y:0 };
+const cam = { x: 0, y: 0 };
 function updateCamera(player) {
-  camera.x = player.x - CANVAS_W/2;
-  camera.y = player.y - CANVAS_H/2;
-  camera.x = Math.max(0, Math.min(WORLD_W*TILE-CANVAS_W, camera.x));
-  camera.y = Math.max(0, Math.min(WORLD_H*TILE-CANVAS_H, camera.y));
+  const tx = player.x / TILE, ty = player.y / TILE;
+  cam.x = (tx - ty) * (ISO_W / 2);
+  cam.y = (tx + ty) * (ISO_H / 2);
 }
 
 // ===== GAME =====
@@ -1553,10 +1571,11 @@ const Game = {
     const p = this.player;
     const spd = p.activeHorse ? 250 : 150;
     let dx=0, dy=0;
-    if (Input.isDown('w')||Input.isDown('arrowup'))    { dy=-1; p.dir='up'; }
-    if (Input.isDown('s')||Input.isDown('arrowdown'))  { dy=1;  p.dir='down'; }
-    if (Input.isDown('a')||Input.isDown('arrowleft'))  { dx=-1; p.dir='left'; }
-    if (Input.isDown('d')||Input.isDown('arrowright')) { dx=1;  p.dir='right'; }
+    // Isometric controls: W=NW(screen-up), S=SE, A=SW(screen-left), D=NE(screen-right)
+    if (Input.isDown('w')||Input.isDown('arrowup'))    { dx-=1; dy-=1; p.dir='up'; }
+    if (Input.isDown('s')||Input.isDown('arrowdown'))  { dx+=1; dy+=1; p.dir='down'; }
+    if (Input.isDown('a')||Input.isDown('arrowleft'))  { dx-=1; dy+=1; p.dir='left'; }
+    if (Input.isDown('d')||Input.isDown('arrowright')) { dx+=1; dy-=1; p.dir='right'; }
 
     if (dx!==0||dy!==0) {
       const len=Math.sqrt(dx*dx+dy*dy);
@@ -1833,120 +1852,156 @@ const Game = {
   },
 
   render() {
-    const ctx=this.ctx;
-    ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
+    const ctx = this.ctx;
+    const p = this.player;
 
-    const startC=Math.max(0,Math.floor(camera.x/TILE));
-    const endC=Math.min(WORLD_W,Math.ceil((camera.x+CANVAS_W)/TILE)+1);
-    const startR=Math.max(0,Math.floor(camera.y/TILE));
-    const endR=Math.min(WORLD_H,Math.ceil((camera.y+CANVAS_H)/TILE)+1);
+    // Sky gradient background
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, CANVAS_H * 0.6);
+    skyGrad.addColorStop(0, '#4A90D9');
+    skyGrad.addColorStop(1, '#87CEEB');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-    // Draw tiles
-    for (let r=startR;r<endR;r++) {
-      for (let c=startC;c<endC;c++) {
-        const px=c*TILE-camera.x;
-        const py=r*TILE-camera.y;
-        drawTile(ctx, this.world.get(r,c), px, py, this.time);
+    const objects = [];
+
+    // Collect tiles (with viewport culling)
+    for (let ty = 0; ty < WORLD_H; ty++) {
+      for (let tx = 0; tx < WORLD_W; tx++) {
+        const pos = tileToScreen(tx, ty);
+        if (pos.x > -ISO_W*2 && pos.x < CANVAS_W + ISO_W*2 && pos.y > -200 && pos.y < CANVAS_H + 300) {
+          objects.push({ depth: tx + ty, subDepth: 0, type: 'tile', tx, ty, tile: this.world.get(ty, tx), sx: pos.x, sy: pos.y });
+        }
       }
     }
 
-    // Draw lead rope
-    const p=this.player;
+    // Tournament sign
+    const signTX = 18, signTY = 23;
+    const signPos = tileToScreen(signTX, signTY);
+    objects.push({ depth: signTX + signTY, subDepth: 0.5, type: 'sign', sx: signPos.x, sy: signPos.y });
+
+    // Lead horse
     if (p.leadHorse) {
-      const lh=p.leadHorse;
-      ctx.strokeStyle='#8B4513';
-      ctx.lineWidth=2;
-      ctx.setLineDash([4,4]);
+      const lpos = worldToScreen(p.leadHorse.x, p.leadHorse.y);
+      if (lpos.x > -100 && lpos.x < CANVAS_W + 100) {
+        objects.push({ depth: p.leadHorse.x/TILE + p.leadHorse.y/TILE, subDepth: 1, type: 'leadhorse', sx: lpos.x, sy: lpos.y });
+      }
+    }
+
+    // NPCs
+    for (const npc of this.npcs) {
+      const npos = worldToScreen(npc.x, npc.y);
+      if (npos.x > -100 && npos.x < CANVAS_W + 100) {
+        objects.push({ depth: npc.x/TILE + npc.y/TILE, subDepth: 1, type: 'npc', npc, sx: npos.x, sy: npos.y });
+      }
+    }
+
+    // Player
+    const ppos = worldToScreen(p.x, p.y);
+    objects.push({ depth: p.x/TILE + p.y/TILE, subDepth: 1, type: 'player', sx: ppos.x, sy: ppos.y });
+
+    // Z-sort: by depth, then subDepth (entities after tiles at same depth)
+    objects.sort((a, b) => a.depth - b.depth || a.subDepth - b.subDepth);
+
+    // Draw lead rope line (before sorted objects, in world space order)
+    if (p.leadHorse) {
+      const lpos = worldToScreen(p.leadHorse.x, p.leadHorse.y);
+      ctx.strokeStyle = '#8B4513';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
       ctx.beginPath();
-      ctx.moveTo(p.x-camera.x, p.y-camera.y);
-      ctx.lineTo(lh.x-camera.x, lh.y-camera.y);
+      ctx.moveTo(ppos.x, ppos.y);
+      ctx.lineTo(lpos.x, lpos.y);
       ctx.stroke();
       ctx.setLineDash([]);
-      // Draw lead horse
-      drawHorse(ctx, lh.x-camera.x, lh.y-camera.y, lh.color, lh.dir, this.time, lh.equipment);
     }
 
-    // Draw NPCs
-    for (const npc of this.npcs) {
-      const nx=npc.x-camera.x, ny=npc.y-camera.y;
-      if (nx>-60&&nx<CANVAS_W+60&&ny>-60&&ny<CANVAS_H+60) {
-        drawHorse(ctx, nx, ny, npc.horse.color, npc.dir, npc.animT, {});
-        // NPC rider
-        drawRider(ctx, nx, ny-30, npc.dir, {helmetColor:'#333',jacketColor:'#8B0000',pantsColor:'#F0F0F0',bootsColor:'#1a1a1a'});
+    // Draw all sorted objects
+    for (const obj of objects) {
+      if (obj.type === 'tile') {
+        drawTile(ctx, obj.tile, obj.sx, obj.sy, this.time);
+      } else if (obj.type === 'player') {
+        if (p.activeHorse) {
+          drawHorse(ctx, obj.sx, obj.sy, p.activeHorse.color, p.dir, p.animT, p.activeHorse.equipment);
+          drawRider(ctx, obj.sx, obj.sy - 18, p.dir, p.outfit);
+        } else {
+          this._drawWalker(ctx, obj.sx, obj.sy, p.dir, p.animT, p.outfit);
+        }
+      } else if (obj.type === 'npc') {
+        const npc = obj.npc;
+        drawHorse(ctx, obj.sx, obj.sy, npc.horse.color, npc.dir, npc.animT, {});
+        drawRider(ctx, obj.sx, obj.sy - 30, npc.dir, {helmetColor:'#333',jacketColor:'#8B0000',pantsColor:'#F0F0F0',bootsColor:'#1a1a1a'});
         // Name tag
-        ctx.fillStyle='rgba(0,0,0,0.7)';
-        const tw=ctx.measureText(npc.name).width;
-        ctx.fillRect(nx-tw/2-4, ny-70, tw+8, 18);
-        ctx.fillStyle='#FFD700';
-        ctx.font='12px sans-serif';
-        ctx.textAlign='center';
-        ctx.fillText(npc.name, nx, ny-57);
-        ctx.textAlign='left';
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        const tw = ctx.measureText(npc.name).width;
+        ctx.fillRect(obj.sx - tw/2 - 4, obj.sy - 80, tw + 8, 18);
+        ctx.fillStyle = '#FFD700';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(npc.name, obj.sx, obj.sy - 67);
+        ctx.textAlign = 'left';
+      } else if (obj.type === 'leadhorse') {
+        drawHorse(ctx, obj.sx, obj.sy, p.leadHorse.color, p.leadHorse.dir, this.time, p.leadHorse.equipment);
+      } else if (obj.type === 'sign') {
+        // Tournament sign
+        ctx.fillStyle = '#8B4513';
+        ctx.fillRect(obj.sx - 2, obj.sy - 50, 4, 32);
+        ctx.fillStyle = '#FFD700';
+        ctx.fillRect(obj.sx - 26, obj.sy - 50, 54, 22);
+        ctx.fillStyle = '#333';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('TURNIER', obj.sx, obj.sy - 41);
+        ctx.fillText('E: Starten', obj.sx, obj.sy - 31);
+        ctx.textAlign = 'left';
       }
     }
 
-    // Draw player
-    const screenX=p.x-camera.x, screenY=p.y-camera.y;
-    if (p.activeHorse) {
-      drawHorse(ctx, screenX, screenY, p.activeHorse.color, p.dir, p.animT, p.activeHorse.equipment);
-      drawRider(ctx, screenX, screenY-18, p.dir, p.outfit);
-    } else {
-      this._drawWalker(ctx, screenX, screenY, p.dir, p.animT, p.outfit);
-    }
+    // Vignette effect
+    const vignette = ctx.createRadialGradient(CANVAS_W/2, CANVAS_H/2, CANVAS_H*0.3, CANVAS_W/2, CANVAS_H/2, CANVAS_H*0.8);
+    vignette.addColorStop(0, 'rgba(0,0,0,0)');
+    vignette.addColorStop(1, 'rgba(0,0,0,0.25)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-    // Draw tournament sign in arena
-    const signX=18*TILE-camera.x, signY=23*TILE-camera.y;
-    if (signX>-50&&signX<CANVAS_W&&signY>-20&&signY<CANVAS_H) {
-      ctx.fillStyle='#8B4513';
-      ctx.fillRect(signX,signY,4,32);
-      ctx.fillStyle='#FFD700';
-      ctx.fillRect(signX-24,signY,52,22);
-      ctx.fillStyle='#333';
-      ctx.font='bold 9px sans-serif';
-      ctx.textAlign='center';
-      ctx.fillText('TURNIER',signX+2,signY+9);
-      ctx.fillText('E: Starten',signX+2,signY+19);
-      ctx.textAlign='left';
-    }
-
-    // Minimap overlay
     this.updateMinimap();
   },
 
   _drawWalker(ctx, x, y, dir, t, outfit) {
     ctx.save();
     ctx.translate(x, y);
+
+    let angle = dir==='left'?0.4:dir==='right'?-0.4:dir==='up'?0.2:-0.2;
+    ctx.rotate(angle);
+
     // Shadow
-    ctx.fillStyle='rgba(0,0,0,0.2)';
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
     ctx.beginPath();
-    ctx.ellipse(0,5,10,4,0,0,Math.PI*2);
+    ctx.ellipse(0, 5, 10, 4, 0, 0, Math.PI*2);
     ctx.fill();
+
+    const walkAnim = Math.sin(t*6)*4;
     // Boots
-    const walkAnim=Math.sin(t*6)*4;
-    ctx.fillStyle=outfit.bootsColor||'#2c1810';
-    ctx.fillRect(-7,-22+walkAnim,5,8);
-    ctx.fillRect(3,-22-walkAnim,5,8);
+    ctx.fillStyle = outfit.bootsColor || '#2c1810';
+    ctx.fillRect(-7, -22+walkAnim, 5, 8);
+    ctx.fillRect(3, -22-walkAnim, 5, 8);
     // Pants
-    ctx.fillStyle=outfit.pantsColor||'#FFFFFF';
-    ctx.fillRect(-7,-34,15,14);
+    ctx.fillStyle = outfit.pantsColor || '#FFFFFF';
+    ctx.fillRect(-7, -34, 15, 14);
     // Jacket
-    ctx.fillStyle=outfit.jacketColor||'#1a3a5c';
-    ctx.fillRect(-7,-47,15,15);
+    ctx.fillStyle = outfit.jacketColor || '#1a3a5c';
+    ctx.fillRect(-7, -47, 15, 15);
     // Arms
-    const armAnim=Math.sin(t*6)*5;
-    ctx.fillRect(-11,-47+armAnim,4,10);
-    ctx.fillRect(8,-47-armAnim,4,10);
+    const armAnim = Math.sin(t*6)*5;
+    ctx.fillRect(-11, -47+armAnim, 4, 10);
+    ctx.fillRect(8, -47-armAnim, 4, 10);
     // Head
-    ctx.fillStyle='#F5C5A0';
-    ctx.beginPath();
-    ctx.arc(0,-54,6,0,Math.PI*2);
-    ctx.fill();
+    ctx.fillStyle = '#F5C5A0';
+    ctx.beginPath(); ctx.arc(0, -54, 6, 0, Math.PI*2); ctx.fill();
     // Helmet
-    ctx.fillStyle=outfit.helmetColor||'#1a1a1a';
-    ctx.beginPath();
-    ctx.arc(0,-54,6.5,Math.PI,0);
-    ctx.fill();
-    ctx.fillRect(-7,-54,14,3);
+    ctx.fillStyle = outfit.helmetColor || '#1a1a1a';
+    ctx.beginPath(); ctx.arc(0, -54, 6.5, Math.PI, 0); ctx.fill();
+    ctx.fillRect(-7, -54, 14, 3);
+
     ctx.restore();
   }
 };
