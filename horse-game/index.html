@@ -54,6 +54,7 @@ canvas { display: block; border: 2px solid #4A7C2F; }
 #trailOverlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #1a3a1a; display: none; z-index: 45; pointer-events: none; }
 #trailCanvas { display: block; }
 #tournamentOverlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 44; pointer-events: none; }
+#cameraHint { position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); font-size: 10px; color: rgba(255,255,255,0.45); pointer-events: none; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -65,6 +66,7 @@ canvas { display: block; border: 2px solid #4A7C2F; }
     <div id="interactPrompt"></div>
     <div id="notifications"></div>
     <div id="statusBar"></div>
+    <div id="cameraHint">Rechtsklick + Ziehen = Kamera schwenken &nbsp;|&nbsp; C = Zentrieren</div>
   </div>
   <div id="panel">
     <button class="close-btn" id="panelClose">✕</button>
@@ -466,8 +468,8 @@ function shadeColor(hex, amount) {
 // World tile → screen pixel (isometric projection)
 function tileToScreen(tx, ty) {
   return {
-    x: (tx - ty) * (ISO_W / 2) - cam.x + CANVAS_W / 2,
-    y: (tx + ty) * (ISO_H / 2) - cam.y + CANVAS_H / 3
+    x: (tx - ty) * (ISO_W / 2) - cam.x + CANVAS_W / 2 + camPan.x,
+    y: (tx + ty) * (ISO_H / 2) - cam.y + CANVAS_H / 3 + camPan.y
   };
 }
 function worldToScreen(wx, wy) {
@@ -612,6 +614,7 @@ const Input = {
     if (k==='escape') UI.closePanel();
     if (k==='tab') { e.preventDefault(); UI.toggleInventory(); }
     if (k===' ') Game.actionPress();
+    if (k==='c') { camPan.x=0; camPan.y=0; UI.notify('Kamera zentriert'); }
   },
   isDown(k) { return !!this.keys[k]; }
 };
@@ -1505,6 +1508,7 @@ function drawTile(ctx, tileType, sx, sy, time) {
 
 // ===== CAMERA =====
 const cam = { x: 0, y: 0 };
+const camPan = { x: 0, y: 0 };   // user-controlled offset (right-click drag)
 function updateCamera(player) {
   const tx = player.x / TILE, ty = player.y / TILE;
   cam.x = (tx - ty) * (ISO_W / 2);
@@ -1541,6 +1545,24 @@ const Game = {
     Input.init();
     UI.init();
     this.drawMinimap();
+
+    // Right-click drag to pan camera
+    let dragStart = null;
+    this.canvas.addEventListener('mousedown', e => {
+      if (e.button === 1 || e.button === 2) {
+        dragStart = { mx: e.clientX, my: e.clientY, px: camPan.x, py: camPan.y };
+        e.preventDefault();
+      }
+    });
+    window.addEventListener('mousemove', e => {
+      if (!dragStart) return;
+      camPan.x = dragStart.px + (e.clientX - dragStart.mx);
+      camPan.y = dragStart.py + (e.clientY - dragStart.my);
+    });
+    window.addEventListener('mouseup', e => {
+      if (e.button === 1 || e.button === 2) dragStart = null;
+    });
+    this.canvas.addEventListener('contextmenu', e => e.preventDefault());
     requestAnimationFrame(ts => this.gameLoop(ts));
   },
 
