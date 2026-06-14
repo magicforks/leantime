@@ -66,7 +66,7 @@ canvas { display: block; border: 2px solid #4A7C2F; }
     <div id="interactPrompt"></div>
     <div id="notifications"></div>
     <div id="statusBar"></div>
-    <div id="cameraHint">Rechtsklick + Ziehen = Kamera schwenken &nbsp;|&nbsp; C = Zentrieren</div>
+    <div id="cameraHint">Rechtsklick + Ziehen = Kamera schwenken &nbsp;|&nbsp; Q/R = Drehen &nbsp;|&nbsp; C = Zentrieren</div>
   </div>
   <div id="panel">
     <button class="close-btn" id="panelClose">✕</button>
@@ -465,8 +465,19 @@ function shadeColor(hex, amount) {
   return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
 }
 
-// World tile → screen pixel (isometric projection)
+// World tile → screen pixel (isometric projection with camera rotation)
 function tileToScreen(tx, ty) {
+  if (camRotation !== 0 && Game.player) {
+    const ptx = Game.player.x / TILE, pty = Game.player.y / TILE;
+    const dx = tx - ptx, dy = ty - pty;
+    let rx, ry;
+    switch (camRotation) {
+      case 1: rx = -dy; ry =  dx; break;  // 90° CW camera
+      case 2: rx = -dx; ry = -dy; break;  // 180°
+      case 3: rx =  dy; ry = -dx; break;  // 270° CW camera
+    }
+    tx = rx + ptx; ty = ry + pty;
+  }
   return {
     x: (tx - ty) * (ISO_W / 2) - cam.x + CANVAS_W / 2 + camPan.x,
     y: (tx + ty) * (ISO_H / 2) - cam.y + CANVAS_H / 3 + camPan.y
@@ -615,6 +626,8 @@ const Input = {
     if (k==='tab') { e.preventDefault(); UI.toggleInventory(); }
     if (k===' ') Game.actionPress();
     if (k==='c') { camPan.x=0; camPan.y=0; UI.notify('Kamera zentriert'); }
+    if (k==='q') { camRotation=(camRotation+3)%4; camPan.x=0; camPan.y=0; }
+    if (k==='r') { camRotation=(camRotation+1)%4; camPan.x=0; camPan.y=0; }
   },
   isDown(k) { return !!this.keys[k]; }
 };
@@ -1419,88 +1432,149 @@ const UI = {
 
 // ===== ISOMETRIC TILE RENDERER =====
 // sx,sy = screen center of the diamond tile
+function isoPath(ctx, sx, sy) {
+  ctx.beginPath();
+  ctx.moveTo(sx, sy-ISO_H/2); ctx.lineTo(sx+ISO_W/2, sy);
+  ctx.lineTo(sx, sy+ISO_H/2); ctx.lineTo(sx-ISO_W/2, sy); ctx.closePath();
+}
+function isoDiamondGrad(ctx, sx, sy, c0, c1) {
+  const g = ctx.createLinearGradient(sx-ISO_W/2, sy-ISO_H/2, sx+ISO_W/2, sy+ISO_H/2);
+  g.addColorStop(0, c0); g.addColorStop(1, c1);
+  isoPath(ctx, sx, sy); ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.07)'; ctx.lineWidth = 0.5; ctx.stroke();
+}
+
 function drawTile(ctx, tileType, sx, sy, time) {
   switch(tileType) {
-    case T.GRASS:
-      drawIsoDiamond(ctx, sx, sy, '#4A7C2F', 'rgba(0,0,0,0.08)');
+    case T.GRASS: {
+      isoDiamondGrad(ctx, sx, sy, '#5a9035', '#3a6520');
+      ctx.strokeStyle = '#2d5018'; ctx.lineWidth = 0.7;
+      for(let i=0;i<3;i++){const bx=sx-16+i*16,by=sy-5+i*4;ctx.beginPath();ctx.moveTo(bx,by);ctx.lineTo(bx+2,by-6);ctx.stroke();ctx.beginPath();ctx.moveTo(bx+5,by-1);ctx.lineTo(bx+3,by-5);ctx.stroke();}
       break;
-    case T.FLOWER:
-      drawIsoDiamond(ctx, sx, sy, '#4A7C2F', 'rgba(0,0,0,0.08)');
-      {const fc=['#FF6B8A','#FFD700','#FF69B4','#FF8C00'];
+    }
+    case T.FLOWER: {
+      isoDiamondGrad(ctx, sx, sy, '#5a9035', '#3a6520');
+      const fc=['#FF6B8A','#FFD700','#EE44CC','#FF8C00'];
       for(let i=0;i<3;i++){
-        ctx.fillStyle=fc[i%fc.length];
-        ctx.beginPath();ctx.arc(sx-14+i*14,sy-4+i*3,3,0,Math.PI*2);ctx.fill();
-        ctx.fillStyle='#FFD700';
-        ctx.beginPath();ctx.arc(sx-14+i*14,sy-4+i*3,1.5,0,Math.PI*2);ctx.fill();
-      }}
+        const fx=sx-14+i*14, fy=sy-4+i*3, col=fc[i%fc.length];
+        for(let p=0;p<5;p++){const a=(p/5)*Math.PI*2;ctx.fillStyle=col;ctx.beginPath();ctx.ellipse(fx+Math.cos(a)*3.5,fy+Math.sin(a)*3.5,2.5,1.8,a,0,Math.PI*2);ctx.fill();}
+        ctx.fillStyle='#FFE820';ctx.beginPath();ctx.arc(fx,fy,2,0,Math.PI*2);ctx.fill();
+      }
       break;
-    case T.DIRT:
-      drawIsoDiamond(ctx, sx, sy, '#8B6914', 'rgba(0,0,0,0.1)');
-      ctx.fillStyle='rgba(0,0,0,0.1)';
-      ctx.beginPath();ctx.ellipse(sx-8,sy+2,6,2,0.3,0,Math.PI*2);ctx.fill();
-      ctx.beginPath();ctx.ellipse(sx+10,sy-2,5,2,0.2,0,Math.PI*2);ctx.fill();
+    }
+    case T.DIRT: {
+      isoDiamondGrad(ctx, sx, sy, '#9B7320', '#6a4e10');
+      ctx.fillStyle='rgba(0,0,0,0.12)';
+      ctx.beginPath();ctx.ellipse(sx-8,sy+2,5,2,0.3,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.ellipse(sx+10,sy-2,4,1.5,0.2,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(180,140,60,0.25)';
+      ctx.beginPath();ctx.ellipse(sx+2,sy-5,3,1.5,-0.3,0,Math.PI*2);ctx.fill();
       break;
-    case T.STABLE_FLOOR:
-      drawIsoDiamond(ctx, sx, sy, '#D4A574', 'rgba(0,0,0,0.1)');
-      ctx.strokeStyle='#C49060'; ctx.lineWidth=0.8;
+    }
+    case T.STABLE_FLOOR: {
+      isoDiamondGrad(ctx, sx, sy, '#D0A068', '#A87840');
+      ctx.strokeStyle='rgba(90,50,15,0.25)'; ctx.lineWidth=1;
+      for(let i=-1;i<=1;i++){const lx=sx+i*22,ly=sy+i*11;ctx.beginPath();ctx.moveTo(lx-ISO_W/2,ly+ISO_H/4);ctx.lineTo(lx+ISO_W/2,ly-ISO_H/4);ctx.stroke();}
+      ctx.strokeStyle='rgba(90,50,15,0.15)'; ctx.lineWidth=0.5;
       ctx.beginPath();ctx.moveTo(sx-ISO_W/2,sy);ctx.lineTo(sx,sy-ISO_H/2);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(sx,sy+ISO_H/2);ctx.lineTo(sx+ISO_W/2,sy);ctx.stroke();
       break;
-    case T.STALL:
-      drawIsoDiamond(ctx, sx, sy, '#C4944A', 'rgba(0,0,0,0.12)');
+    }
+    case T.STALL: {
+      isoDiamondGrad(ctx, sx, sy, '#C08848', '#906030');
+      ctx.strokeStyle='#D4A840'; ctx.lineWidth=0.8;
+      for(let i=0;i<4;i++){const ox=(i-1.5)*10,oy=(i-1.5)*5;ctx.beginPath();ctx.moveTo(sx+ox-6,sy+oy);ctx.lineTo(sx+ox+8,sy+oy-4);ctx.stroke();}
       ctx.strokeStyle='#5C3A1A'; ctx.lineWidth=1.5;
       ctx.beginPath();ctx.moveTo(sx,sy-ISO_H/2);ctx.lineTo(sx,sy+ISO_H/2);ctx.stroke();
       break;
-    case T.WALL:
-      drawIsoBlock(ctx, sx, sy, '#8a8a8a', ISO_Z * 1.6);
+    }
+    case T.WALL: {
+      const h=ISO_Z*1.6;
+      // Left face with bricks
+      ctx.beginPath();ctx.moveTo(sx-ISO_W/2,sy-h);ctx.lineTo(sx,sy-h+ISO_H/2);ctx.lineTo(sx,sy+ISO_H/2);ctx.lineTo(sx-ISO_W/2,sy);ctx.closePath();
+      const lf=ctx.createLinearGradient(sx-ISO_W/2,0,sx,0); lf.addColorStop(0,'#787878'); lf.addColorStop(1,'#606060');
+      ctx.fillStyle=lf; ctx.fill();
+      ctx.strokeStyle='rgba(0,0,0,0.25)'; ctx.lineWidth=0.8;
+      for(let r=0;r<3;r++){const ry=sy-h+(r+1)*(h/3);ctx.beginPath();ctx.moveTo(sx-ISO_W/2,ry);ctx.lineTo(sx,ry+ISO_H/4);ctx.stroke();}
+      ctx.beginPath();ctx.moveTo(sx-ISO_W/4,sy-h+ISO_H/4);ctx.lineTo(sx-ISO_W/4,sy-ISO_H/4);ctx.stroke();
+      // Right face with bricks
+      ctx.beginPath();ctx.moveTo(sx,sy-h+ISO_H/2);ctx.lineTo(sx+ISO_W/2,sy-h);ctx.lineTo(sx+ISO_W/2,sy);ctx.lineTo(sx,sy+ISO_H/2);ctx.closePath();
+      const rf=ctx.createLinearGradient(sx,0,sx+ISO_W/2,0); rf.addColorStop(0,'#484848'); rf.addColorStop(1,'#383838');
+      ctx.fillStyle=rf; ctx.fill();
+      for(let r=0;r<3;r++){const ry=sy-h+ISO_H/2+(r+1)*((h-ISO_H/2)/3);ctx.beginPath();ctx.moveTo(sx,ry);ctx.lineTo(sx+ISO_W/2,ry-ISO_H/4);ctx.stroke();}
+      ctx.beginPath();ctx.moveTo(sx+ISO_W/4,sy-h+ISO_H/4*3);ctx.lineTo(sx+ISO_W/4,sy-ISO_H/4);ctx.stroke();
+      // Top
+      drawIsoDiamond(ctx, sx, sy-h, '#909090', 'rgba(0,0,0,0.08)');
       break;
-    case T.FENCE:
-      drawIsoDiamond(ctx, sx, sy, '#4A7C2F', 'rgba(0,0,0,0.05)');
-      // Wooden post
-      ctx.fillStyle='#8B4513';
-      ctx.fillRect(sx-3, sy-ISO_Z*0.7, 6, ISO_Z*0.7);
-      // Rails
-      ctx.fillStyle='#A0522D';
-      ctx.fillRect(sx-ISO_W/2, sy-ISO_Z*0.5, ISO_W, 3);
-      ctx.fillRect(sx-ISO_W/2, sy-ISO_Z*0.25, ISO_W, 3);
-      break;
-    case T.TREE:
-      drawIsoDiamond(ctx, sx, sy, '#3d6b22', 'rgba(0,0,0,0.05)');
-      // Trunk
-      ctx.fillStyle='#5C3317';
-      ctx.fillRect(sx-5, sy-ISO_Z*2.8, 10, ISO_Z*2.3);
-      // Canopy layers
-      ctx.fillStyle='#1e5c0e';
-      ctx.beginPath();ctx.arc(sx, sy-ISO_Z*3.5, 24, 0, Math.PI*2);ctx.fill();
-      ctx.fillStyle='#2d7a1a';
-      ctx.beginPath();ctx.arc(sx-7, sy-ISO_Z*4, 18, 0, Math.PI*2);ctx.fill();
-      ctx.fillStyle='#3a9a22';
-      ctx.beginPath();ctx.arc(sx+5, sy-ISO_Z*3.8, 15, 0, Math.PI*2);ctx.fill();
-      ctx.fillStyle='#4ab82a';
-      ctx.beginPath();ctx.arc(sx-2, sy-ISO_Z*4.5, 12, 0, Math.PI*2);ctx.fill();
-      break;
-    case T.WATER:
-      drawIsoDiamond(ctx, sx, sy, '#2255CC', 'rgba(0,0,0,0.1)');
-      ctx.fillStyle=`rgba(100,180,255,${0.3+Math.sin(time*1.5)*0.1})`;
-      for(let i=0;i<2;i++){
-        ctx.beginPath();
-        ctx.ellipse(sx-14+i*28+Math.sin(time+i)*4, sy+Math.cos(time*0.8+i)*2, 12, 4, 0.2, 0, Math.PI*2);
-        ctx.fill();
+    }
+    case T.FENCE: {
+      isoDiamondGrad(ctx, sx, sy, '#4f8830', '#3a6520');
+      // Post with grain
+      const gf=ctx.createLinearGradient(sx-4,0,sx+4,0); gf.addColorStop(0,'#C07848'); gf.addColorStop(0.5,'#9A5830'); gf.addColorStop(1,'#784020');
+      ctx.fillStyle=gf; ctx.fillRect(sx-3,sy-ISO_Z*0.85,6,ISO_Z*0.85);
+      ctx.fillStyle='#C8844A'; ctx.fillRect(sx-4,sy-ISO_Z*0.87,8,4);
+      // Rails with iso perspective
+      const rc='#8A5028';
+      const rails=[[0.6,0.47],[0.3,0.17]];
+      for(const [t,b] of rails){
+        ctx.fillStyle=rc;
+        ctx.beginPath();ctx.moveTo(sx-ISO_W/2,sy-ISO_Z*t);ctx.lineTo(sx,sy-ISO_Z*t-ISO_H/4);ctx.lineTo(sx,sy-ISO_Z*b-ISO_H/4);ctx.lineTo(sx-ISO_W/2,sy-ISO_Z*b);ctx.closePath();ctx.fill();
+        ctx.fillStyle=shadeColor(rc,-20);
+        ctx.beginPath();ctx.moveTo(sx,sy-ISO_Z*t-ISO_H/4);ctx.lineTo(sx+ISO_W/2,sy-ISO_Z*t);ctx.lineTo(sx+ISO_W/2,sy-ISO_Z*b);ctx.lineTo(sx,sy-ISO_Z*b-ISO_H/4);ctx.closePath();ctx.fill();
       }
       break;
-    case T.ARENA:
-      drawIsoDiamond(ctx, sx, sy, '#C4A35A', 'rgba(0,0,0,0.06)');
-      ctx.strokeStyle='#B8953A'; ctx.lineWidth=0.5;
-      ctx.beginPath();ctx.moveTo(sx-ISO_W/4,sy-ISO_H/4);ctx.lineTo(sx+ISO_W/4,sy+ISO_H/4);ctx.stroke();
+    }
+    case T.TREE: {
+      isoDiamondGrad(ctx, sx, sy, '#2a5815', '#1a3a0a');
+      // Tapered trunk
+      ctx.fillStyle='#3e2008';
+      ctx.beginPath();ctx.moveTo(sx-7,sy);ctx.lineTo(sx+7,sy);ctx.lineTo(sx+4,sy-ISO_Z*2.6);ctx.lineTo(sx-4,sy-ISO_Z*2.6);ctx.closePath();ctx.fill();
+      ctx.strokeStyle='#2a1405'; ctx.lineWidth=0.8;
+      ctx.beginPath();ctx.moveTo(sx-2,sy-4);ctx.lineTo(sx-3,sy-ISO_Z*2.5);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(sx+3,sy-8);ctx.lineTo(sx+2,sy-ISO_Z*2.5);ctx.stroke();
+      // Canopy layers
+      [{x:-3,y:3.3,r:30,c:'#0a3806'},{x:6,y:3.8,r:24,c:'#165510'},{x:-7,y:4.2,r:20,c:'#1e6c18'},{x:2,y:4.7,r:16,c:'#288520'}].forEach(({x,y,r,c})=>{
+        ctx.fillStyle=c;ctx.beginPath();ctx.arc(sx+x,sy-ISO_Z*y,r,0,Math.PI*2);ctx.fill();
+      });
+      ctx.fillStyle='rgba(60,140,30,0.28)';ctx.beginPath();ctx.arc(sx-9,sy-ISO_Z*4.6,11,0,Math.PI*2);ctx.fill();
       break;
-    case T.PATH:
-      drawIsoDiamond(ctx, sx, sy, '#A0896B', 'rgba(0,0,0,0.07)');
-      ctx.strokeStyle='#907858'; ctx.lineWidth=1;
-      ctx.beginPath();ctx.moveTo(sx-ISO_W/3,sy);ctx.lineTo(sx+ISO_W/3,sy);ctx.stroke();
+    }
+    case T.WATER: {
+      const wg=ctx.createLinearGradient(sx-ISO_W/2,sy-ISO_H/2,sx+ISO_W/2,sy+ISO_H/2);
+      wg.addColorStop(0,'#1848b0'); wg.addColorStop(1,'#082880');
+      isoPath(ctx,sx,sy); ctx.fillStyle=wg; ctx.fill();
+      ctx.strokeStyle='rgba(100,180,255,0.3)'; ctx.lineWidth=1; ctx.stroke();
+      const sh=0.22+Math.sin(time*1.8)*0.1;
+      ctx.fillStyle=`rgba(130,210,255,${sh})`;
+      for(let i=0;i<3;i++){const wx=sx-20+i*20+Math.sin(time*0.9+i*1.4)*5,wy=sy-2+Math.cos(time*0.7+i)*3;ctx.beginPath();ctx.ellipse(wx,wy,10+i*2,3,0.1,0,Math.PI*2);ctx.fill();}
+      const sp=Math.abs(Math.sin(time*2.5));
+      ctx.fillStyle=`rgba(255,255,255,${sp*0.5})`;ctx.beginPath();ctx.arc(sx+8,sy-6+Math.sin(time*1.5)*3,2,0,Math.PI*2);ctx.fill();
       break;
-    case T.PADDOCK:
-      drawIsoDiamond(ctx, sx, sy, '#5a9040', 'rgba(0,0,0,0.07)');
+    }
+    case T.ARENA: {
+      isoDiamondGrad(ctx, sx, sy, '#D8B870', '#B09040');
+      ctx.strokeStyle='rgba(100,70,20,0.2)'; ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(sx-12,sy-3);ctx.lineTo(sx+12,sy+6);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(sx-6,sy+5);ctx.lineTo(sx+10,sy-2);ctx.stroke();
       break;
+    }
+    case T.PATH: {
+      isoDiamondGrad(ctx, sx, sy, '#B8A080', '#887860');
+      ctx.fillStyle='rgba(70,50,25,0.18)';
+      [[sx-14,sy-4,0.2],[sx+2,sy-8,0.0],[sx+16,sy-1,-0.1],[sx-7,sy+5,0.3],[sx+9,sy+2,0.1]].forEach(([cx,cy,ang])=>{
+        ctx.beginPath();ctx.ellipse(cx,cy,7,3.5,ang,0,Math.PI*2);ctx.fill();
+        ctx.strokeStyle='rgba(50,35,15,0.25)';ctx.lineWidth=0.6;ctx.stroke();
+      });
+      break;
+    }
+    case T.PADDOCK: {
+      isoDiamondGrad(ctx, sx, sy, '#70a050', '#507838');
+      ctx.fillStyle='rgba(90,150,55,0.35)';
+      ctx.beginPath();ctx.ellipse(sx-8,sy,10,5,-0.3,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#3a6020'; ctx.lineWidth=0.6;
+      ctx.beginPath();ctx.moveTo(sx+6,sy-6);ctx.lineTo(sx+8,sy-11);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(sx-10,sy+2);ctx.lineTo(sx-8,sy-3);ctx.stroke();
+      break;
+    }
     default:
       drawIsoDiamond(ctx, sx, sy, '#4A7C2F', 'rgba(0,0,0,0.05)');
   }
@@ -1509,6 +1583,7 @@ function drawTile(ctx, tileType, sx, sy, time) {
 // ===== CAMERA =====
 const cam = { x: 0, y: 0 };
 const camPan = { x: 0, y: 0 };   // user-controlled offset (right-click drag)
+let camRotation = 0;              // 0=SW view, 1=NW, 2=NE, 3=SE (90° CW steps)
 function updateCamera(player) {
   const tx = player.x / TILE, ty = player.y / TILE;
   cam.x = (tx - ty) * (ISO_W / 2);
@@ -1593,11 +1668,17 @@ const Game = {
     const p = this.player;
     const spd = p.activeHorse ? 250 : 150;
     let dx=0, dy=0;
-    // Isometric controls: W=NW(screen-up), S=SE, A=SW(screen-left), D=NE(screen-right)
-    if (Input.isDown('w')||Input.isDown('arrowup'))    { dx-=1; dy-=1; p.dir='up'; }
-    if (Input.isDown('s')||Input.isDown('arrowdown'))  { dx+=1; dy+=1; p.dir='down'; }
-    if (Input.isDown('a')||Input.isDown('arrowleft'))  { dx-=1; dy+=1; p.dir='left'; }
-    if (Input.isDown('d')||Input.isDown('arrowright')) { dx+=1; dy-=1; p.dir='right'; }
+    // Movement directions rotate with camera so WASD stays screen-relative
+    const D=[
+      {w:[-1,-1],s:[1,1],  a:[-1,1], d:[1,-1]},
+      {w:[-1,1], s:[1,-1], a:[1,1],  d:[-1,-1]},
+      {w:[1,1],  s:[-1,-1],a:[1,-1], d:[-1,1]},
+      {w:[1,-1], s:[-1,1], a:[-1,-1],d:[1,1]},
+    ][camRotation];
+    if (Input.isDown('w')||Input.isDown('arrowup'))    { dx+=D.w[0]; dy+=D.w[1]; p.dir='up'; }
+    if (Input.isDown('s')||Input.isDown('arrowdown'))  { dx+=D.s[0]; dy+=D.s[1]; p.dir='down'; }
+    if (Input.isDown('a')||Input.isDown('arrowleft'))  { dx+=D.a[0]; dy+=D.a[1]; p.dir='left'; }
+    if (Input.isDown('d')||Input.isDown('arrowright')) { dx+=D.d[0]; dy+=D.d[1]; p.dir='right'; }
 
     if (dx!==0||dy!==0) {
       const len=Math.sqrt(dx*dx+dy*dy);
@@ -1984,6 +2065,16 @@ const Game = {
     vignette.addColorStop(1, 'rgba(0,0,0,0.25)');
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    // Compass rose (top-right corner)
+    const compassLabels = ['↖N', '↗N', '↘N', '↙N'];
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath(); ctx.arc(CANVAS_W - 30, 30, 22, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#FFD700'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(compassLabels[camRotation], CANVAS_W - 30, 27);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '8px sans-serif';
+    ctx.fillText('Q / R', CANVAS_W - 30, 40);
+    ctx.textAlign = 'left';
 
     this.updateMinimap();
   },
