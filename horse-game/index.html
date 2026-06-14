@@ -720,13 +720,13 @@ const Training = {
 
     if (this.eventActive) {
       if (this.eventType==='buck' && this.spaceCount >= 5) {
-        this.score += 20; this.eventActive=false; UI.notify('Gut gemacht!'); this.showPhase();
+        this.score += 20; this.eventActive=false; UI.notify('Gut gemacht!'); this.showPhase(); return;
       }
       if (this.eventType==='bolt') {
         if (Input.isDown('arrowleft')||Input.isDown('arrowright')) {
           this.spaceCount++;
           if (this.spaceCount > 30) {
-            this.score += 20; this.eventActive=false; UI.notify('Pferd beruhigt!'); this.showPhase();
+            this.score += 20; this.eventActive=false; UI.notify('Pferd beruhigt!'); this.showPhase(); return;
           }
         }
       }
@@ -737,6 +737,7 @@ const Training = {
       this.phase++;
       this.showPhase();
     }
+    if (!this.active) return;   // finish() may have been called inside showPhase
     if (this.phase >= this.phases.length && !this.eventActive) this.finish();
   },
 
@@ -746,6 +747,7 @@ const Training = {
   },
 
   finish() {
+    if (!this.active) return;   // guard against double-call
     this.active = false;
     document.getElementById('trainingOverlay').style.display = 'none';
     const earned = 20 + Math.floor(Math.random()*30);
@@ -2027,11 +2029,12 @@ const Game = {
     const objects = [];
 
     // Collect tiles (with viewport culling)
+    // depth = pos.y (screen Y) so z-sort works correctly for all camera rotations
     for (let ty = 0; ty < WORLD_H; ty++) {
       for (let tx = 0; tx < WORLD_W; tx++) {
         const pos = tileToScreen(tx, ty);
         if (pos.x > -ISO_W*2 && pos.x < CANVAS_W + ISO_W*2 && pos.y > -200 && pos.y < CANVAS_H + 300) {
-          objects.push({ depth: tx + ty, subDepth: 0, type: 'tile', tx, ty, tile: this.world.get(ty, tx), sx: pos.x, sy: pos.y });
+          objects.push({ depth: pos.y, subDepth: 0, type: 'tile', tx, ty, tile: this.world.get(ty, tx), sx: pos.x, sy: pos.y });
         }
       }
     }
@@ -2039,13 +2042,13 @@ const Game = {
     // Tournament sign
     const signTX = 18, signTY = 23;
     const signPos = tileToScreen(signTX, signTY);
-    objects.push({ depth: signTX + signTY, subDepth: 0.5, type: 'sign', sx: signPos.x, sy: signPos.y });
+    objects.push({ depth: signPos.y, subDepth: 0.5, type: 'sign', sx: signPos.x, sy: signPos.y });
 
-    // Lead horse
+    // Lead horse — depth = screen_y + small offset so it draws after ground tiles at same position
     if (p.leadHorse) {
       const lpos = worldToScreen(p.leadHorse.x, p.leadHorse.y);
       if (lpos.x > -100 && lpos.x < CANVAS_W + 100) {
-        objects.push({ depth: p.leadHorse.x/TILE + p.leadHorse.y/TILE, subDepth: 1, type: 'leadhorse', sx: lpos.x, sy: lpos.y });
+        objects.push({ depth: lpos.y + 0.5, subDepth: 0, type: 'leadhorse', sx: lpos.x, sy: lpos.y });
       }
     }
 
@@ -2053,15 +2056,15 @@ const Game = {
     for (const npc of this.npcs) {
       const npos = worldToScreen(npc.x, npc.y);
       if (npos.x > -100 && npos.x < CANVAS_W + 100) {
-        objects.push({ depth: npc.x/TILE + npc.y/TILE, subDepth: 1, type: 'npc', npc, sx: npos.x, sy: npos.y });
+        objects.push({ depth: npos.y + 0.5, subDepth: 0, type: 'npc', npc, sx: npos.x, sy: npos.y });
       }
     }
 
-    // Player
+    // Player — same screen_y as ground tile but drawn after it (+ 0.5)
     const ppos = worldToScreen(p.x, p.y);
-    objects.push({ depth: p.x/TILE + p.y/TILE, subDepth: 1, type: 'player', sx: ppos.x, sy: ppos.y });
+    objects.push({ depth: ppos.y + 0.5, subDepth: 0, type: 'player', sx: ppos.x, sy: ppos.y });
 
-    // Z-sort: by depth, then subDepth (entities after tiles at same depth)
+    // Z-sort by screen Y (handles all camera rotations correctly)
     objects.sort((a, b) => a.depth - b.depth || a.subDepth - b.subDepth);
 
     // Draw lead rope line (before sorted objects, in world space order)
