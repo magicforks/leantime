@@ -301,11 +301,14 @@ function drawHorse(ctx, sx, sy, color, direction, t, equipment, scale) {
   const legAnim = moving ? Math.sin(t * 5.5) * 7 : 0;
   const bodyBob = moving ? Math.abs(Math.sin(t * 5.5)) * 2.5 : 0;
 
-  // Shadow on ground
+  // Shadow on ground (stays at tile level even after horse is lifted)
   ctx.fillStyle = 'rgba(0,0,0,0.18)';
   ctx.beginPath();
-  ctx.ellipse(2, 8, 22, 7, -0.2, 0, Math.PI*2);
+  ctx.ellipse(2, 0, 22, 7, -0.2, 0, Math.PI*2);
   ctx.fill();
+
+  // Lift horse 20px so hooves sit at ground level (sy) instead of sy+21
+  ctx.translate(0, -20);
 
   let angle = 0;
   if (direction === 'left') angle = 0.4;
@@ -2096,16 +2099,16 @@ const Game = {
       } else if (obj.type === 'player') {
         if (p.activeHorse) {
           drawHorse(ctx, obj.sx, obj.sy, p.activeHorse.color, p.dir, p.animT, p.activeHorse.equipment);
-          drawRider(ctx, obj.sx, obj.sy + 4, p.dir, p.outfit);
+          drawRider(ctx, obj.sx, obj.sy - 15, p.dir, p.outfit);
           // Horse name chip above rider
           ctx.fillStyle = 'rgba(0,0,0,0.72)';
           const hn = p.activeHorse.name;
           ctx.font = 'bold 11px sans-serif';
           const hw = ctx.measureText('🐎 ' + hn).width;
-          ctx.fillRect(obj.sx - hw/2 - 5, obj.sy - 72, hw + 10, 17);
+          ctx.fillRect(obj.sx - hw/2 - 5, obj.sy - 92, hw + 10, 17);
           ctx.fillStyle = '#FFD700';
           ctx.textAlign = 'center';
-          ctx.fillText('🐎 ' + hn, obj.sx, obj.sy - 59);
+          ctx.fillText('🐎 ' + hn, obj.sx, obj.sy - 79);
           ctx.textAlign = 'left';
         } else {
           this._drawWalker(ctx, obj.sx, obj.sy, p.dir, p.animT, p.outfit);
@@ -2113,7 +2116,7 @@ const Game = {
       } else if (obj.type === 'npc') {
         const npc = obj.npc;
         drawHorse(ctx, obj.sx, obj.sy, npc.horse.color, npc.dir, npc.animT, {});
-        drawRider(ctx, obj.sx, obj.sy + 4, npc.dir, {helmetColor:'#333',jacketColor:'#8B0000',pantsColor:'#F0F0F0',bootsColor:'#1a1a1a'});
+        drawRider(ctx, obj.sx, obj.sy - 15, npc.dir, {helmetColor:'#333',jacketColor:'#8B0000',pantsColor:'#F0F0F0',bootsColor:'#1a1a1a'});
         // Name tag
         ctx.fillStyle = 'rgba(0,0,0,0.7)';
         ctx.font = '12px sans-serif';
