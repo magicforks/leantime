@@ -626,7 +626,12 @@ const Input = {
   onKeyDown(k, e) {
     if (k==='e') Game.interact();
     if (k==='l') Game.toggleLead();
-    if (k==='escape') UI.closePanel();
+    if (k==='escape') {
+      if (Training.active) { Training.finish(); UI.notify('Training abgebrochen.'); }
+      else if (TrailRide.active) { TrailRide.finish(); UI.notify('Trail abgebrochen.'); }
+      else if (Tournament.active) { Tournament.finish(); UI.notify('Turnier abgebrochen.'); }
+      else UI.closePanel();
+    }
     if (k==='tab') { e.preventDefault(); UI.toggleInventory(); }
     if (k===' ') Game.actionPress();
     if (k==='c') { camAngle=0; camPitchH=ISO_H/2; camZoom=1.0; UI.notify('Kamera zurückgesetzt'); }
@@ -651,105 +656,123 @@ const Economy = {
   }
 };
 
-// ===== TRAINING MINI-GAME =====
+// ===== TRAINING (WORLD-BASED) =====
 const Training = {
   active: false,
   phase: 0,
-  phases: [],
-  phaseTimer: 0,
-  totalTime: 0,
+  phases: ['Schritt','Trab','Galopp','Sprung'],
   score: 0,
-  eventActive: false,
-  eventType: null,
-  spaceCount: 0,
-  phaseComplete: false,
+  checkpoints: [],
+  nextCheckpoint: 0,
+  phaseTimer: 0,
+  jumpObstacleX: 0,
+  jumpObstacleY: 0,
+  jumpDone: false,
+  jumpWindow: false,
+  _t: 0,
 
   start() {
     if (!Game.player.activeHorse) { UI.notify('Du brauchst ein Pferd!'); return; }
     this.active = true;
     this.phase = 0;
     this.score = 0;
-    this.totalTime = 0;
-    this.phases = ['Schritt','Trab','Galopp','Sprung'];
-    this.phaseTimer = 3;
-    this.eventActive = false;
-    this.spaceCount = 0;
-    const overlay = document.getElementById('trainingOverlay');
-    overlay.style.display = 'flex';
-    this.showPhase();
-    UI.notify('Training gestartet!');
+    this._t = 0;
+    UI.hidePrompt();
+    this._setupPhase();
+    UI.notify('Training gestartet! Reite durch die Markierungen!');
   },
 
-  showPhase() {
-    if (this.phase >= this.phases.length) { this.finish(); return; }
-    const task = document.getElementById('trainingTask');
-    const instr = document.getElementById('trainingInstruction');
-    task.textContent = this.phases[this.phase];
-    this.phaseTimer = 3 + Math.random()*2;
-    this.eventActive = false;
-    this.spaceCount = 0;
-    if (this.phase===0) instr.textContent = 'Bewege dich langsam (WASD)';
-    else if (this.phase===1) instr.textContent = 'Trab! Drücke W rhythmisch';
-    else if (this.phase===2) instr.textContent = 'Galopp! Halte W gedrückt';
-    else if (this.phase===3) instr.textContent = 'Sprung! Drücke LEERTASTE';
+  _setupPhase() {
+    this.nextCheckpoint = 0;
+    this.jumpWindow = false;
+    // Arena: rows 23-36, cols 6-24 (fence at rows 22,37 cols 5,25)
+    if (this.phase === 0) {
+      this.checkpoints = [
+        {x:10*TILE, y:25*TILE, done:false},
+        {x:20*TILE, y:25*TILE, done:false},
+        {x:20*TILE, y:34*TILE, done:false},
+        {x:10*TILE, y:34*TILE, done:false},
+      ];
+      this.phaseTimer = 60;
+    } else if (this.phase === 1) {
+      this.checkpoints = [
+        {x:9*TILE,  y:24*TILE, done:false},
+        {x:21*TILE, y:24*TILE, done:false},
+        {x:21*TILE, y:35*TILE, done:false},
+        {x:9*TILE,  y:35*TILE, done:false},
+        {x:15*TILE, y:29*TILE, done:false},
+      ];
+      this.phaseTimer = 45;
+    } else if (this.phase === 2) {
+      this.checkpoints = [
+        {x:9*TILE,  y:24*TILE, done:false},
+        {x:21*TILE, y:35*TILE, done:false},
+        {x:9*TILE,  y:35*TILE, done:false},
+        {x:21*TILE, y:24*TILE, done:false},
+      ];
+      this.phaseTimer = 30;
+    } else if (this.phase === 3) {
+      this.jumpDone = false;
+      this.jumpObstacleX = 15*TILE;
+      this.jumpObstacleY = 29*TILE;
+      this.checkpoints = [
+        {x:8*TILE,  y:29*TILE, done:false},
+        {x:22*TILE, y:29*TILE, done:false},
+      ];
+      this.phaseTimer = 30;
+    }
+    const hints = ['Reite durch alle orangen Kegel!','Trab! Reite durch alle Kegel!','Galopp! Sprint durch alle Kegel!','Springe über das rote Hindernis! (LEERTASTE)'];
+    UI.notify(this.phases[this.phase] + ' — ' + hints[this.phase]);
   },
 
   update(dt) {
     if (!this.active) return;
-    this.totalTime += dt;
+    this._t += dt;
     this.phaseTimer -= dt;
-    const prog = 1 - this.phaseTimer / 5;
-    document.getElementById('trainingProgressBar').style.width = Math.min(100,prog*100)+'%';
-
-    // Random event
-    if (!this.eventActive && Math.random() < dt * 0.3) {
-      this.eventActive = true;
-      this.eventType = Math.random()<0.5 ? 'buck' : 'bolt';
-      this.spaceCount = 0;
-      const task = document.getElementById('trainingTask');
-      const instr = document.getElementById('trainingInstruction');
-      if (this.eventType==='buck') {
-        task.textContent = '⚠️ Pferd bockt!';
-        instr.textContent = 'Drücke LEERTASTE schnell!';
-      } else {
-        task.textContent = '⚠️ Pferd durchgeht!';
-        instr.textContent = 'Lenke mit Pfeiltasten!';
-      }
-    }
-
-    if (this.eventActive) {
-      if (this.eventType==='buck' && this.spaceCount >= 5) {
-        this.score += 20; this.eventActive=false; UI.notify('Gut gemacht!'); this.showPhase(); return;
-      }
-      if (this.eventType==='bolt') {
-        if (Input.isDown('arrowleft')||Input.isDown('arrowright')) {
-          this.spaceCount++;
-          if (this.spaceCount > 30) {
-            this.score += 20; this.eventActive=false; UI.notify('Pferd beruhigt!'); this.showPhase(); return;
-          }
+    const p = Game.player;
+    if (this.nextCheckpoint < this.checkpoints.length) {
+      const cp = this.checkpoints[this.nextCheckpoint];
+      const dx = p.x - cp.x, dy = p.y - cp.y;
+      if (Math.sqrt(dx*dx+dy*dy) < 52) {
+        cp.done = true;
+        this.score += 10;
+        this.nextCheckpoint++;
+        if (this.nextCheckpoint >= this.checkpoints.length && (this.phase !== 3 || this.jumpDone)) {
+          this._advancePhase(); return;
         }
       }
     }
-
-    if (this.phaseTimer <= 0 && !this.eventActive) {
-      this.score += 25;
-      this.phase++;
-      this.showPhase();
+    if (this.phase === 3 && !this.jumpDone) {
+      const dx = p.x - this.jumpObstacleX, dy = p.y - this.jumpObstacleY;
+      this.jumpWindow = Math.sqrt(dx*dx+dy*dy) < 80;
+    } else { this.jumpWindow = false; }
+    if (this.phaseTimer <= 0) {
+      UI.notify('Zeit abgelaufen für ' + this.phases[this.phase]);
+      this._advancePhase();
     }
-    if (!this.active) return;   // finish() may have been called inside showPhase
-    if (this.phase >= this.phases.length && !this.eventActive) this.finish();
+  },
+
+  _advancePhase() {
+    this.score += 25;
+    this.phase++;
+    if (this.phase >= this.phases.length) { this.finish(); return; }
+    this._setupPhase();
   },
 
   actionPress() {
-    if (!this.active) return;
-    if (this.eventActive && this.eventType==='buck') this.spaceCount++;
+    if (!this.active || this.phase !== 3 || !this.jumpWindow || this.jumpDone) return;
+    this.jumpDone = true;
+    this.score += 30;
+    UI.notify('Perfekter Sprung! 🏆');
+    this.checkpoints.forEach(c => c.done = true);
+    this.nextCheckpoint = this.checkpoints.length;
+    this._advancePhase();
   },
 
   finish() {
-    if (!this.active) return;   // guard against double-call
+    if (!this.active) return;
     this.active = false;
-    document.getElementById('trainingOverlay').style.display = 'none';
-    const earned = 20 + Math.floor(Math.random()*30);
+    const earned = 20 + Math.floor(this.score / 2);
     Economy.earn(earned, 'Training abgeschlossen!');
     const horse = Game.player.activeHorse;
     if (horse) {
@@ -757,215 +780,113 @@ const Training = {
       horse.stamina = Math.min(10, horse.stamina + 0.1);
       horse.happiness = Math.min(100, horse.happiness + 10);
     }
-    UI.notify('Training beendet! Pferd verbessert!');
-  }
+    UI.notify(`Training beendet! ${this.score} Punkte | +${earned} Münzen | Pferd verbessert!`);
+  },
 };
 
-// ===== TRAIL RIDE =====
+// ===== TRAIL RIDE (WORLD-BASED) =====
 const TrailRide = {
   active: false,
-  canvas: null,
-  ctx: null,
-  t: 0,
-  playerY: 300,
-  jumping: false,
-  jumpV: 0,
-  obstacles: [],
-  coins: [],
-  scrollX: 0,
-  coinsCollected: 0,
-  duration: 20,
+  _t: 0,
   elapsed: 0,
-  groundY: 420,
-  obstacleTypes: [
-    {w:30,h:20,color:'#8B4513',label:'Baumstamm'},
-    {w:20,h:15,color:'#4169E1',label:'Pfütze'},
-    {w:25,h:30,color:'#228B22',label:'Busch'}
-  ],
+  duration: 90,
+  coins: [],
+  obstacles: [],
+  coinsCollected: 0,
+  jumpWindow: false,
+  jumpWindowObs: null,
 
   start() {
     if (!Game.player.activeHorse) { UI.notify('Du brauchst ein Pferd!'); return; }
-    this.active=true; this.t=0; this.elapsed=0; this.coinsCollected=0;
-    this.playerY=this.groundY-40; this.jumping=false; this.jumpV=0;
-    this.obstacles=[]; this.coins=[]; this.scrollX=0;
-    this.canvas=document.getElementById('trailCanvas');
-    this.ctx=this.canvas.getContext('2d');
-    document.getElementById('trailOverlay').style.display='block';
-    this._spawnObstacles();
-    UI.notify('Trail-Ausritt gestartet!');
-  },
-
-  _spawnObstacles() {
-    for (let i=0; i<8; i++) {
-      const ot = this.obstacleTypes[Math.floor(Math.random()*this.obstacleTypes.length)];
-      this.obstacles.push({x:900+i*280+Math.random()*100, y:this.groundY-ot.h, w:ot.w, h:ot.h, color:ot.color, passed:false});
+    this.active = true;
+    this._t = 0;
+    this.elapsed = 0;
+    this.coinsCollected = 0;
+    this.jumpWindow = false;
+    this.jumpWindowObs = null;
+    UI.hidePrompt();
+    // Trail: rows 37-69, cols 32-38
+    this.coins = [];
+    const coinRows = [42, 46, 50, 53, 56, 59, 62, 65];
+    const coinCols = [35, 33, 36, 34, 37, 33, 35, 36];
+    for (let i = 0; i < coinRows.length; i++) {
+      this.coins.push({x: coinCols[i]*TILE+12, y: coinRows[i]*TILE+12, collected: false});
     }
-    for (let i=0; i<12; i++) {
-      this.coins.push({x:900+i*200+Math.random()*80, y:this.groundY-60-Math.random()*40, collected:false});
-    }
+    this.obstacles = [
+      {x:35*TILE+12, y:48*TILE+12, cleared:false, _wasClose:false},
+      {x:34*TILE+12, y:57*TILE+12, cleared:false, _wasClose:false},
+      {x:36*TILE+12, y:63*TILE+12, cleared:false, _wasClose:false},
+    ];
+    UI.notify('Trail-Ausritt! Reite zum Ziel am Ende des Pfades! LEERTASTE = Springen!');
   },
 
   update(dt) {
     if (!this.active) return;
-    this.t += dt;
+    this._t += dt;
     this.elapsed += dt;
-    const scrollSpeed = 200;
-    const sx = scrollSpeed * dt;
-
-    // Move obstacles/coins
-    for (const o of this.obstacles) o.x -= sx;
-    for (const c of this.coins) c.x -= sx;
-
-    // Player jump
-    if ((Input.isDown('arrowup')||Input.isDown('w')) && !this.jumping) {
-      this.jumping=true; this.jumpV=-500;
-    }
-    if (this.jumping) {
-      this.jumpV += 1000*dt;
-      this.playerY += this.jumpV*dt;
-      if (this.playerY >= this.groundY-40) {
-        this.playerY=this.groundY-40; this.jumping=false; this.jumpV=0;
-      }
-    }
-
-    // Collision with obstacles
-    const px=130, py=this.playerY, pw=40, ph=40;
-    for (const o of this.obstacles) {
-      if (!o.passed && o.x < px+pw && o.x+o.w > px && o.y < py+ph && o.y+o.h > py) {
-        o.passed=true; UI.notify('Hindernis verfehlt!');
-      }
-      if (!o.passed && o.x+o.w < px) o.passed=true;
-    }
-
-    // Collect coins
+    const p = Game.player;
     for (const c of this.coins) {
-      if (!c.collected && Math.abs(c.x-px)<25 && Math.abs(c.y-(py+20))<25) {
-        c.collected=true; this.coinsCollected++;
+      if (!c.collected) {
+        const dx = p.x-c.x, dy = p.y-c.y;
+        if (Math.sqrt(dx*dx+dy*dy) < 44) { c.collected = true; this.coinsCollected++; UI.notify('Münze! 💰'); }
       }
     }
-
+    this.jumpWindow = false;
+    this.jumpWindowObs = null;
+    for (const obs of this.obstacles) {
+      if (!obs.cleared) {
+        const dx = p.x-obs.x, dy = p.y-obs.y;
+        const dist = Math.sqrt(dx*dx+dy*dy);
+        if (dist < 80) { this.jumpWindow = true; this.jumpWindowObs = obs; }
+        if (obs._wasClose && dist > 160) obs.cleared = true;
+        if (dist < 100) obs._wasClose = true;
+      }
+    }
+    if (p.y > 68*TILE) this.finish();
     if (this.elapsed >= this.duration) this.finish();
-    this.render();
   },
 
-  render() {
-    const ctx = this.ctx;
-    const W=900, H=600, gY=this.groundY;
-    ctx.clearRect(0,0,W,H);
-    // Sky
-    ctx.fillStyle='#87CEEB';
-    ctx.fillRect(0,0,W,H);
-    // Background trees
-    ctx.fillStyle='#2d5a1b';
-    for (let i=0;i<10;i++) {
-      const tx=(i*120-this.t*30)%1000;
-      ctx.beginPath();
-      ctx.arc(tx,gY-80,35,0,Math.PI*2);
-      ctx.fill();
-      ctx.fillStyle='#5C3317';
-      ctx.fillRect(tx-5,gY-50,10,55);
-      ctx.fillStyle='#2d5a1b';
+  actionPress() {
+    if (!this.active || !this.jumpWindow || !this.jumpWindowObs) return;
+    const obs = this.jumpWindowObs;
+    if (!obs.cleared) {
+      obs.cleared = true;
+      this.coinsCollected += 2;
+      UI.notify('Sprung! 🦘 +2 Münzen Bonus!');
+      this.jumpWindow = false;
+      this.jumpWindowObs = null;
     }
-    // Ground
-    ctx.fillStyle='#4A7C2F';
-    ctx.fillRect(0,gY,W,H-gY);
-    ctx.fillStyle='#A0896B';
-    ctx.fillRect(0,gY-10,W,10);
-    // Path
-    ctx.fillStyle='#C4A35A';
-    ctx.fillRect(0,gY-15,W,5);
-
-    // Progress bar
-    const prog = this.elapsed/this.duration;
-    ctx.fillStyle='rgba(0,0,0,0.5)';
-    ctx.fillRect(10,10,300,20);
-    ctx.fillStyle='#4A7C2F';
-    ctx.fillRect(10,10,300*prog,20);
-    ctx.fillStyle='#fff';
-    ctx.font='12px sans-serif';
-    ctx.fillText(`Fortschritt: ${Math.floor(prog*100)}%`,15,25);
-    ctx.fillText(`Münzen: ${this.coinsCollected}`,320,25);
-    ctx.fillText('↑ Springen',750,25);
-
-    // Obstacles
-    for (const o of this.obstacles) {
-      if (o.x > -50 && o.x < W+50) {
-        ctx.fillStyle = o.color;
-        ctx.fillRect(o.x, o.y, o.w, o.h);
-        if (o.color==='#8B4513') {
-          // log detail
-          ctx.strokeStyle='#6B3410';
-          ctx.lineWidth=2;
-          for (let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(o.x+5,o.y+i*7);ctx.lineTo(o.x+o.w-5,o.y+i*7);ctx.stroke();}
-        }
-      }
-    }
-
-    // Coins
-    for (const c of this.coins) {
-      if (!c.collected && c.x>-20 && c.x<W+20) {
-        ctx.fillStyle='#FFD700';
-        ctx.beginPath();
-        ctx.arc(c.x,c.y,8,0,Math.PI*2);
-        ctx.fill();
-        ctx.strokeStyle='#FFA500';
-        ctx.lineWidth=2;
-        ctx.stroke();
-      }
-    }
-
-    // Player horse
-    const horse = Game.player.activeHorse;
-    const hc = horse ? horse.color : '#8B4513';
-    drawHorse(ctx, 130, this.playerY+20, hc, 'right', this.t*3, horse?horse.equipment:{});
-    drawRider(ctx, 130, this.playerY+20, 'right', Game.player.outfit);
-
-    // Time
-    const remaining = Math.max(0, this.duration - this.elapsed);
-    ctx.fillStyle='#fff';
-    ctx.font='bold 16px sans-serif';
-    ctx.textAlign='right';
-    ctx.fillText(`Zeit: ${remaining.toFixed(1)}s`, W-20, 30);
-    ctx.textAlign='left';
   },
 
   finish() {
-    this.active=false;
-    document.getElementById('trailOverlay').style.display='none';
-    const earned = 30 + this.coinsCollected*5;
+    if (!this.active) return;
+    this.active = false;
+    const earned = 30 + this.coinsCollected * 5;
     Economy.earn(earned, 'Trail-Ausritt abgeschlossen!');
-    UI.notify(`Trail beendet! +${earned} Münzen`);
+    UI.notify(`Trail beendet! ${this.coinsCollected} Münzen | +${earned} 💰`);
     if (Game.player.activeHorse) {
-      Game.player.activeHorse.happiness = Math.min(100, Game.player.activeHorse.happiness+15);
-      Game.player.activeHorse.energy = Math.max(0, Game.player.activeHorse.energy-20);
+      Game.player.activeHorse.happiness = Math.min(100, Game.player.activeHorse.happiness + 15);
+      Game.player.activeHorse.energy = Math.max(0, Game.player.activeHorse.energy - 20);
     }
   }
 };
 
-// ===== TOURNAMENT =====
+// ===== TOURNAMENT (WORLD-BASED) =====
 const Tournament = {
   active: false,
   type: null,
-  canvas: null,
-  ctx: null,
-  t: 0,
-  // Show Jumping
+  _t: 0,
+  elapsed: 0,
+  // Jumping
   obstacles: [],
-  jumpScore: 0,
   jumpIdx: 0,
-  jumpState: 'approach',
-  jumpTimer: 0,
-  jumpWindow: false,
-  windowTimer: 0,
   faults: 0,
+  jumpWindow: false,
   // Dressage
-  letters: ['A','K','V','E','S','H','C','M'],
-  letterKeys: ['a','k','v','e','s','h','c','m'],
+  dressageLetters: [],
   dressagePhase: 0,
   dressageScore: 0,
   dressageTimer: 0,
-  dressageResult: null,
-  elapsed: 0,
 
   showSelection() {
     if (!Game.player.activeHorse) { UI.notify('Du brauchst ein Pferd!'); return; }
@@ -979,263 +900,125 @@ const Tournament = {
 
   start(type) {
     UI.closePanel();
-    this.active=true; this.type=type; this.t=0; this.elapsed=0;
-    this.canvas=document.getElementById('tournCanvas');
-    this.ctx=this.canvas.getContext('2d');
-    const overlay=document.getElementById('tournamentOverlay');
-    overlay.style.display='flex';
-    overlay.style.pointerEvents='all';
-    if (type==='jumping') {
-      this.obstacles=[]; this.faults=0; this.jumpIdx=0; this.jumpState='approach'; this.jumpTimer=2; this.jumpWindow=false;
-      for (let i=0;i<8;i++) this.obstacles.push({x:900+i*250, passed:false, missed:false, color:`hsl(${i*45},60%,40%)`});
-      UI.notify('Springturnier beginnt! Drücke LEERTASTE zum richtigen Zeitpunkt!');
+    this.active = true;
+    this.type = type;
+    this._t = 0;
+    this.elapsed = 0;
+    UI.hidePrompt();
+    if (type === 'jumping') {
+      this.faults = 0;
+      this.jumpIdx = 0;
+      this.jumpWindow = false;
+      // Jump obstacles inside arena (rows 23-36, cols 6-24)
+      this.obstacles = [
+        {x:15*TILE, y:24*TILE, cleared:false, missed:false, _wasClose:false},
+        {x:21*TILE, y:28*TILE, cleared:false, missed:false, _wasClose:false},
+        {x:15*TILE, y:32*TILE, cleared:false, missed:false, _wasClose:false},
+        {x:9*TILE,  y:28*TILE, cleared:false, missed:false, _wasClose:false},
+        {x:20*TILE, y:24*TILE, cleared:false, missed:false, _wasClose:false},
+        {x:10*TILE, y:35*TILE, cleared:false, missed:false, _wasClose:false},
+      ];
+      UI.notify('Springturnier! Reite zu den Hindernissen und drücke LEERTASTE!');
     } else {
-      this.dressagePhase=0; this.dressageScore=0; this.dressageTimer=3; this.dressageResult=null;
-      UI.notify('Dressurturnier beginnt! Drücke die angezeigten Tasten!');
+      this.dressagePhase = 0;
+      this.dressageScore = 0;
+      this.dressageTimer = 15;
+      // Dressage letter markers around the arena perimeter (inside fence)
+      this.dressageLetters = [
+        {label:'A', x:15*TILE, y:36*TILE, done:false},
+        {label:'K', x:8*TILE,  y:35*TILE, done:false},
+        {label:'E', x:7*TILE,  y:29*TILE, done:false},
+        {label:'H', x:8*TILE,  y:24*TILE, done:false},
+        {label:'C', x:15*TILE, y:23*TILE, done:false},
+        {label:'M', x:22*TILE, y:24*TILE, done:false},
+        {label:'B', x:23*TILE, y:29*TILE, done:false},
+        {label:'F', x:22*TILE, y:35*TILE, done:false},
+      ];
+      UI.notify('Dressurturnier! Reite zu den leuchtenden Buchstaben!');
     }
   },
 
   update(dt) {
     if (!this.active) return;
-    this.t+=dt; this.elapsed+=dt;
-    if (this.type==='jumping') this._updateJumping(dt);
+    this._t += dt;
+    this.elapsed += dt;
+    if (this.type === 'jumping') this._updateJumping();
     else this._updateDressage(dt);
-    this._render();
   },
 
-  _updateJumping(dt) {
-    const scrollSpeed=120;
-    for (const o of this.obstacles) o.x -= scrollSpeed*dt;
-
-    // Current obstacle approaching
-    if (this.jumpIdx < this.obstacles.length) {
-      const o = this.obstacles[this.jumpIdx];
-      if (o.x < 280 && o.x > 200 && !this.jumpWindow) {
-        this.jumpWindow=true; this.windowTimer=0.5;
-      }
-      if (this.jumpWindow) {
-        this.windowTimer-=dt;
-        if (this.windowTimer<=0 && !o.passed && !o.missed) {
-          o.missed=true; this.faults+=4; this.jumpWindow=false;
-          UI.notify('Fehler! +4 Strafpunkte');
-          this.jumpIdx++;
-        }
-      }
-      if (o.x < 100) { if(!o.passed&&!o.missed){o.missed=true;this.jumpIdx++;} }
-    }
-    if (this.jumpIdx >= this.obstacles.length && this.obstacles[this.obstacles.length-1].x < 100) {
-      this.finish();
+  _updateJumping() {
+    if (this.jumpIdx >= this.obstacles.length) { this.finish(); return; }
+    const p = Game.player;
+    const obs = this.obstacles[this.jumpIdx];
+    const dx = p.x - obs.x, dy = p.y - obs.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    this.jumpWindow = dist < 80;
+    if (dist < 110) obs._wasClose = true;
+    if (obs._wasClose && dist > 160 && !obs.cleared && !obs.missed) {
+      obs.missed = true;
+      this.faults += 4;
+      this.jumpWindow = false;
+      UI.notify('Hindernis verpasst! +4 Strafpunkte');
+      this.jumpIdx++;
     }
   },
 
   actionPress() {
-    if (!this.active) return;
-    if (this.type==='jumping' && this.jumpWindow) {
-      const o = this.obstacles[this.jumpIdx];
-      if (o && !o.passed) {
-        o.passed=true;
-        this.jumpWindow=false;
-        UI.notify('Perfekter Sprung!');
+    if (!this.active || this.type !== 'jumping') return;
+    if (this.jumpWindow && this.jumpIdx < this.obstacles.length) {
+      const obs = this.obstacles[this.jumpIdx];
+      if (!obs.cleared && !obs.missed) {
+        obs.cleared = true;
+        this.jumpWindow = false;
+        UI.notify('Perfekter Sprung! ✓');
         this.jumpIdx++;
+        if (this.jumpIdx >= this.obstacles.length) this.finish();
       }
     }
   },
 
   _updateDressage(dt) {
-    if (this.dressageResult!==null) {
-      this.elapsed+=dt;
-      if (this.elapsed>3) this.finish();
-      return;
-    }
-    this.dressageTimer-=dt;
-    if (this.dressageTimer<=0) {
+    if (this.dressagePhase >= this.dressageLetters.length) { this.finish(); return; }
+    this.dressageTimer -= dt;
+    const p = Game.player;
+    const letter = this.dressageLetters[this.dressagePhase];
+    const dx = p.x - letter.x, dy = p.y - letter.y;
+    if (Math.sqrt(dx*dx + dy*dy) < 65) {
+      const pts = Math.max(5, Math.floor(this.dressageTimer / 15 * 20) + 5);
+      this.dressageScore += pts;
+      letter.done = true;
+      UI.notify(`${letter.label}! +${pts} Punkte`);
       this.dressagePhase++;
-      if (this.dressagePhase>=8) { this.dressageResult='done'; return; }
-      this.dressageTimer=2.5;
-    }
-  },
-
-  _dressageKeyPress(k) {
-    if (!this.active||this.type!=='dressage') return;
-    if (this.dressageResult!==null) return;
-    const expected=this.letterKeys[this.dressagePhase];
-    const timeLeft=this.dressageTimer/2.5;
-    if (k===expected) {
-      const pts = Math.floor(timeLeft*15)+5;
-      this.dressageScore+=pts;
-      UI.notify(`Korrekt! +${pts} Punkte`);
+      this.dressageTimer = 15;
+      if (this.dressagePhase >= this.dressageLetters.length) { this.finish(); return; }
+    } else if (this.dressageTimer <= 0) {
+      UI.notify(`${letter.label} verpasst!`);
       this.dressagePhase++;
-      this.dressageTimer=2.5;
-      if (this.dressagePhase>=8) this.dressageResult='done';
-    } else {
-      UI.notify('Falsche Taste!');
+      this.dressageTimer = 15;
+      if (this.dressagePhase >= this.dressageLetters.length) { this.finish(); return; }
     }
-  },
-
-  _render() {
-    const ctx=this.ctx, W=900,H=600;
-    ctx.clearRect(0,0,W,H);
-    if (this.type==='jumping') this._renderJumping(ctx,W,H);
-    else this._renderDressage(ctx,W,H);
-  },
-
-  _renderJumping(ctx,W,H) {
-    // Sky
-    ctx.fillStyle='#87CEEB'; ctx.fillRect(0,0,W,H);
-    // Ground
-    ctx.fillStyle='#4A7C2F'; ctx.fillRect(0,380,W,220);
-    ctx.fillStyle='#C4A35A'; ctx.fillRect(0,370,W,15);
-
-    // Obstacles
-    for (const o of this.obstacles) {
-      if (o.x>-60&&o.x<W+60) {
-        // Poles
-        ctx.fillStyle=o.color;
-        ctx.fillRect(o.x-5,340,10,40);
-        ctx.fillRect(o.x+45,340,10,40);
-        // Bar
-        ctx.fillStyle= o.passed?'#888': o.missed?'#FF4444':o.color;
-        ctx.fillRect(o.x,330,55,8);
-        // Stands
-        ctx.fillStyle='#888';
-        ctx.fillRect(o.x-8,370,8,15);
-        ctx.fillRect(o.x+55,370,8,15);
-      }
-    }
-
-    // Ideal jump zone indicator
-    if (this.jumpWindow) {
-      ctx.fillStyle='rgba(0,255,0,0.3)';
-      ctx.fillRect(200,300,80,100);
-      ctx.strokeStyle='#0f0';
-      ctx.lineWidth=2;
-      ctx.strokeRect(200,300,80,100);
-      ctx.fillStyle='#0f0';
-      ctx.font='bold 14px sans-serif';
-      ctx.textAlign='center';
-      ctx.fillText('JETZT! [LEERTASTE]',240,295);
-    }
-
-    // Player horse + rider
-    const jumpAnim = this.jumpWindow ? -30 : 0;
-    const horse=Game.player.activeHorse;
-    drawHorse(ctx,150,350+jumpAnim,horse?horse.color:'#8B4513','right',this.t*3,horse?horse.equipment:{});
-    drawRider(ctx,150,350+jumpAnim,'right',Game.player.outfit);
-
-    // HUD
-    ctx.fillStyle='rgba(0,0,0,0.6)';
-    ctx.fillRect(0,0,W,50);
-    ctx.fillStyle='#fff';
-    ctx.font='16px sans-serif';
-    ctx.textAlign='left';
-    ctx.fillText(`Hindernisse: ${this.jumpIdx}/${this.obstacles.length}`,10,30);
-    ctx.fillStyle='#FF6666';
-    ctx.fillText(`Strafpunkte: ${this.faults}`,250,30);
-    ctx.fillStyle='#FFD700';
-    ctx.fillText('Springen!',W/2-40,30);
-    ctx.fillStyle='#aaa';
-    ctx.textAlign='right';
-    ctx.fillText('ESC: Abbrechen',W-10,30);
-    ctx.textAlign='left';
-  },
-
-  _renderDressage(ctx,W,H) {
-    ctx.fillStyle='#C4A35A'; ctx.fillRect(0,0,W,H);
-    // Arena border
-    ctx.strokeStyle='#8B6914'; ctx.lineWidth=6;
-    ctx.strokeRect(80,80,W-160,H-160);
-
-    // Arena letters
-    const positions = [
-      {l:'A',x:W/2,y:H-60},{l:'K',x:120,y:H-120},{l:'V',x:120,y:H/2+60},
-      {l:'E',x:120,y:H/2},{l:'S',x:120,y:H/2-60},{l:'H',x:120,y:120},
-      {l:'C',x:W/2,y:70},{l:'M',x:W-120,y:120}
-    ];
-    for (const p of positions) {
-      const isActive = this.letters[this.dressagePhase]===p.l;
-      ctx.fillStyle= isActive?'#FFD700':'#333';
-      ctx.font=`bold ${isActive?28:20}px sans-serif`;
-      ctx.textAlign='center';
-      ctx.fillText(p.l,p.x,p.y);
-    }
-
-    // Current instruction
-    if (this.dressagePhase<8 && this.dressageResult===null) {
-      ctx.fillStyle='rgba(0,0,0,0.8)';
-      ctx.fillRect(W/2-150,20,300,50);
-      ctx.fillStyle='#FFD700';
-      ctx.font='bold 20px sans-serif';
-      ctx.textAlign='center';
-      ctx.fillText(`Drücke: "${this.letterKeys[this.dressagePhase].toUpperCase()}" für ${this.letters[this.dressagePhase]}`,W/2,50);
-      // Timer bar
-      const frac=this.dressageTimer/2.5;
-      ctx.fillStyle='rgba(0,0,0,0.5)';
-      ctx.fillRect(W/2-150,75,300,12);
-      ctx.fillStyle= frac>0.5?'#4A7C2F':'#FF6600';
-      ctx.fillRect(W/2-150,75,300*frac,12);
-    }
-
-    // Score
-    ctx.fillStyle='rgba(0,0,0,0.7)';
-    ctx.fillRect(0,0,200,40);
-    ctx.fillStyle='#FFD700';
-    ctx.font='16px sans-serif';
-    ctx.textAlign='left';
-    ctx.fillText(`Punkte: ${this.dressageScore}`,10,26);
-
-    // Phase dots
-    for (let i=0;i<8;i++) {
-      ctx.fillStyle= i<this.dressagePhase?'#4A7C2F': i===this.dressagePhase?'#FFD700':'#555';
-      ctx.beginPath();
-      ctx.arc(W/2-100+i*28,H-30,8,0,Math.PI*2);
-      ctx.fill();
-    }
-
-    // Horse in center
-    const horse=Game.player.activeHorse;
-    drawHorse(ctx,W/2,H/2,horse?horse.color:'#8B4513','right',this.t,horse?horse.equipment:{});
-    drawRider(ctx,W/2,H/2,'right',Game.player.outfit);
-
-    if (this.dressageResult==='done') {
-      ctx.fillStyle='rgba(0,0,0,0.7)';
-      ctx.fillRect(W/2-200,H/2-60,400,120);
-      ctx.fillStyle='#FFD700';
-      ctx.font='bold 28px sans-serif';
-      ctx.textAlign='center';
-      ctx.fillText('Dressur abgeschlossen!',W/2,H/2-20);
-      ctx.fillStyle='#fff';
-      ctx.font='20px sans-serif';
-      ctx.fillText(`Endpunktzahl: ${this.dressageScore}`,W/2,H/2+20);
-    }
-    ctx.textAlign='left';
   },
 
   finish() {
-    this.active=false;
-    const overlay=document.getElementById('tournamentOverlay');
-    overlay.style.display='none';
-    overlay.style.pointerEvents='none';
-
+    if (!this.active) return;
+    this.active = false;
     let placement, earned;
-    if (this.type==='jumping') {
-      const perf = Math.max(0, 100-this.faults*5);
-      placement = perf>=80?1:perf>=50?2:3;
+    if (this.type === 'jumping') {
+      const perf = Math.max(0, 100 - this.faults * 5);
+      placement = perf >= 80 ? 1 : perf >= 50 ? 2 : 3;
     } else {
-      const maxScore=8*20;
-      placement = this.dressageScore>=maxScore*0.8?1:this.dressageScore>=maxScore*0.5?2:3;
+      const maxScore = 8 * 25;
+      placement = this.dressageScore >= maxScore * 0.8 ? 1 : this.dressageScore >= maxScore * 0.5 ? 2 : 3;
     }
-    if (placement===1) earned=200;
-    else if (placement===2) earned=100;
-    else earned=50;
-
-    Economy.earn(earned, `Turnier abgeschlossen!`);
-    const medals=['🥇','🥈','🥉'];
+    earned = placement === 1 ? 200 : placement === 2 ? 100 : 50;
+    Economy.earn(earned, 'Turnier abgeschlossen!');
+    const medals = ['🥇','🥈','🥉'];
     UI.showPanel('Turnierergebnis', `
       <div style="text-align:center;padding:20px">
         <div style="font-size:60px">${medals[placement-1]}</div>
         <div style="font-size:22px;color:#FFD700;margin:12px 0">${placement}. Platz!</div>
         <div style="color:#90EE90;font-size:18px">+${earned} Münzen</div>
-        ${this.type==='jumping'?`<div style="color:#aaa;margin-top:8px">Strafpunkte: ${this.faults}</div>`:`<div style="color:#aaa;margin-top:8px">Punkte: ${this.dressageScore}</div>`}
+        ${this.type==='jumping' ? `<div style="color:#aaa;margin-top:8px">Strafpunkte: ${this.faults}</div>` : `<div style="color:#aaa;margin-top:8px">Punkte: ${this.dressageScore}</div>`}
         <button class="btn btn-primary" style="margin-top:16px;padding:10px 24px" onclick="UI.closePanel()">Schließen</button>
       </div>
     `);
@@ -1851,15 +1634,17 @@ const Game = {
   },
 
   update(dt) {
-    // Don't update world movement during mini-games
-    if (Training.active) { Training.update(dt); return; }
-    if (TrailRide.active) { TrailRide.update(dt); return; }
-    if (Tournament.active) { Tournament.update(dt); return; }
-
     this.movePlayer(dt);
     for (const npc of this.npcs) npc.update(dt, this.world);
     if (this.player.activeHorse) this.player.animT += dt;
-    this.checkInteractions();
+
+    if (Training.active) Training.update(dt);
+    if (TrailRide.active) TrailRide.update(dt);
+    if (Tournament.active) Tournament.update(dt);
+
+    if (!Training.active && !TrailRide.active && !Tournament.active) {
+      this.checkInteractions();
+    }
     updateCamera();
     UI.updateStatus(this.getStatusText());
   },
@@ -2006,6 +1791,7 @@ const Game = {
 
   actionPress() {
     if (Training.active) Training.actionPress();
+    if (TrailRide.active) TrailRide.actionPress();
     if (Tournament.active) Tournament.actionPress();
   },
 
@@ -2244,6 +2030,58 @@ const Game = {
     const ptile = tileToScreen(Math.floor(p.x/TILE), Math.floor(p.y/TILE));
     objects.push({ depth: ptile.y, subDepth: 1, type: 'player', sx: ppos.x, sy: ppos.y });
 
+    // Training checkpoints and jump obstacle
+    if (Training.active) {
+      for (let i = 0; i < Training.checkpoints.length; i++) {
+        const cp = Training.checkpoints[i];
+        const cpos = worldToScreen(cp.x, cp.y);
+        const ctile = tileToScreen(Math.floor(cp.x/TILE), Math.floor(cp.y/TILE));
+        objects.push({depth: ctile.y, subDepth: 0.5, type: 'trnCone', cp, idx: i, sx: cpos.x, sy: cpos.y});
+      }
+      if (Training.phase === 3) {
+        const jpos = worldToScreen(Training.jumpObstacleX, Training.jumpObstacleY);
+        const jtile = tileToScreen(Math.floor(Training.jumpObstacleX/TILE), Math.floor(Training.jumpObstacleY/TILE));
+        objects.push({depth: jtile.y, subDepth: 0.6, type: 'trnJump', sx: jpos.x, sy: jpos.y});
+      }
+    }
+    // Tournament world objects
+    if (Tournament.active) {
+      if (Tournament.type === 'jumping') {
+        for (let i = 0; i < Tournament.obstacles.length; i++) {
+          const obs = Tournament.obstacles[i];
+          const opos = worldToScreen(obs.x, obs.y);
+          const otile = tileToScreen(Math.floor(obs.x/TILE), Math.floor(obs.y/TILE));
+          objects.push({depth: otile.y, subDepth: 0.6, type: 'tournJump', obs, isCurrent: i===Tournament.jumpIdx, sx: opos.x, sy: opos.y});
+        }
+      } else {
+        for (let i = 0; i < Tournament.dressageLetters.length; i++) {
+          const dl = Tournament.dressageLetters[i];
+          const lpos = worldToScreen(dl.x, dl.y);
+          const ltile = tileToScreen(Math.floor(dl.x/TILE), Math.floor(dl.y/TILE));
+          objects.push({depth: ltile.y, subDepth: 0.6, type: 'dressLetter', dl, isCurrent: i===Tournament.dressagePhase, sx: lpos.x, sy: lpos.y});
+        }
+      }
+    }
+    // Trail coins and logs
+    if (TrailRide.active) {
+      for (const c of TrailRide.coins) {
+        if (!c.collected) {
+          const cpos = worldToScreen(c.x, c.y);
+          const ctile = tileToScreen(Math.floor(c.x/TILE), Math.floor(c.y/TILE));
+          objects.push({depth: ctile.y, subDepth: 0.4, type: 'trailCoin', coin: c, sx: cpos.x, sy: cpos.y});
+        }
+      }
+      for (const obs of TrailRide.obstacles) {
+        const opos = worldToScreen(obs.x, obs.y);
+        const otile = tileToScreen(Math.floor(obs.x/TILE), Math.floor(obs.y/TILE));
+        objects.push({depth: otile.y, subDepth: 0.6, type: 'trailLog', obs, sx: opos.x, sy: opos.y});
+      }
+      // Goal flag at trail end
+      const gpos = worldToScreen(35*TILE, 68*TILE);
+      const gtile = tileToScreen(35, 68);
+      objects.push({depth: gtile.y, subDepth: 0.8, type: 'trailGoal', sx: gpos.x, sy: gpos.y});
+    }
+
     // Z-sort by screen Y (handles all camera rotations correctly)
     objects.sort((a, b) => a.depth - b.depth || a.subDepth - b.subDepth);
 
@@ -2314,6 +2152,106 @@ const Game = {
         ctx.fillText('TURNIER', obj.sx, obj.sy - 41);
         ctx.fillText('E: Starten', obj.sx, obj.sy - 31);
         ctx.textAlign = 'left';
+      } else if (obj.type === 'trnCone') {
+        const {cp, idx, sx, sy} = obj;
+        const isNext = idx === Training.nextCheckpoint;
+        const isDone = cp.done;
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.beginPath(); ctx.ellipse(sx, sy, 11, 4, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = isDone ? '#44CC44' : isNext ? '#FF8800' : '#FFCC00';
+        ctx.beginPath(); ctx.moveTo(sx, sy-28); ctx.lineTo(sx-10, sy); ctx.lineTo(sx+10, sy); ctx.closePath(); ctx.fill();
+        if (!isDone) {
+          ctx.fillStyle = 'rgba(255,255,255,0.65)';
+          ctx.fillRect(sx-8, sy-17, 16, 4); ctx.fillRect(sx-6, sy-24, 12, 4);
+          if (isNext) {
+            ctx.strokeStyle = 'rgba(255,136,0,0.55)'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(sx, sy, 46, 0, Math.PI*2); ctx.stroke();
+          }
+          ctx.fillStyle = '#222'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText(idx+1, sx, sy-5); ctx.textAlign = 'left';
+        } else {
+          ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText('✓', sx, sy-8); ctx.textAlign = 'left';
+        }
+      } else if (obj.type === 'trnJump') {
+        const {sx, sy} = obj;
+        const inRange = Training.jumpWindow && !Training.jumpDone;
+        ctx.fillStyle = inRange ? '#FF3333' : '#AA1111';
+        ctx.fillRect(sx-28, sy-36, 6, 36); ctx.fillRect(sx+22, sy-36, 6, 36);
+        ctx.fillStyle = inRange ? '#FFFF00' : '#FF6600';
+        ctx.fillRect(sx-28, sy-30, 56, 8);
+        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(sx-28, sy-20, 56, 8);
+        if (inRange) {
+          ctx.fillStyle = 'rgba(255,255,0,0.22)';
+          ctx.beginPath(); ctx.arc(sx, sy, 74, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle = '#FFD700'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText('LEERTASTE! 🦘', sx, sy-46); ctx.textAlign = 'left';
+        }
+      } else if (obj.type === 'tournJump') {
+        const {obs, isCurrent, sx, sy} = obj;
+        const col = obs.cleared ? '#44CC44' : obs.missed ? '#FF4444' : isCurrent ? '#FF8800' : '#777';
+        ctx.fillStyle = col;
+        ctx.fillRect(sx-28, sy-38, 7, 38); ctx.fillRect(sx+21, sy-38, 7, 38);
+        ctx.fillStyle = obs.cleared ? '#44CC44' : isCurrent ? '#FFFF00' : '#AAAAAA';
+        ctx.fillRect(sx-28, sy-32, 56, 8);
+        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(sx-28, sy-22, 56, 8);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(Tournament.obstacles.indexOf(obs)+1, sx, sy-44); ctx.textAlign = 'left';
+        if (isCurrent && Tournament.jumpWindow && !obs.cleared) {
+          ctx.fillStyle = 'rgba(255,255,0,0.22)';
+          ctx.beginPath(); ctx.arc(sx, sy, 74, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle = '#FFD700'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText('LEERTASTE! 🦘', sx, sy-50); ctx.textAlign = 'left';
+        }
+      } else if (obj.type === 'dressLetter') {
+        const {dl, isCurrent, sx, sy} = obj;
+        const isDone = dl.done;
+        ctx.fillStyle = isDone ? '#44CC44' : isCurrent ? '#FFD700' : '#555';
+        ctx.fillRect(sx-3, sy-46, 6, 46);
+        ctx.fillStyle = isDone ? '#44CC44' : isCurrent ? '#FFD700' : '#777';
+        ctx.fillRect(sx-18, sy-52, 36, 22);
+        ctx.fillStyle = isDone ? '#fff' : isCurrent ? '#000' : '#ccc';
+        ctx.font = `bold ${isCurrent?18:13}px sans-serif`; ctx.textAlign = 'center';
+        ctx.fillText(dl.label, sx, sy-35); ctx.textAlign = 'left';
+        if (isCurrent && !isDone) {
+          const pulse = 0.5 + 0.5*Math.sin(this.time*4);
+          ctx.strokeStyle = `rgba(255,215,0,${0.55*pulse})`; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.arc(sx, sy, 48+pulse*10, 0, Math.PI*2); ctx.stroke();
+          const frac = Math.max(0, Tournament.dressageTimer/15);
+          ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(sx-28, sy-68, 56, 8);
+          ctx.fillStyle = frac>0.4?'#4A7C2F':'#FF6600'; ctx.fillRect(sx-28, sy-68, 56*frac, 8);
+        }
+      } else if (obj.type === 'trailCoin') {
+        const {sx, sy} = obj;
+        const pulse = 0.5 + 0.5*Math.sin(this.time*5 + sx*0.04);
+        ctx.fillStyle = '#FFD700';
+        ctx.beginPath(); ctx.arc(sx, sy-14, 9+pulse*2, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#FFA500'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = '#8B4500'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('$', sx, sy-11); ctx.textAlign = 'left';
+      } else if (obj.type === 'trailLog') {
+        const {obs, sx, sy} = obj;
+        if (!obs.cleared) {
+          ctx.fillStyle = '#8B4513';
+          ctx.fillRect(sx-32, sy-14, 64, 14);
+          ctx.strokeStyle = '#6B3410'; ctx.lineWidth = 1.5;
+          for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(sx-30+i*16, sy-14); ctx.lineTo(sx-30+i*16, sy); ctx.stroke(); }
+          if (TrailRide.jumpWindow && TrailRide.jumpWindowObs === obs) {
+            ctx.fillStyle = 'rgba(255,255,0,0.22)';
+            ctx.beginPath(); ctx.arc(sx, sy, 74, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#FFD700'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText('LEERTASTE! 🦘', sx, sy-26); ctx.textAlign = 'left';
+          }
+        } else {
+          ctx.fillStyle = 'rgba(68,204,68,0.7)'; ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText('✓', sx, sy-8); ctx.textAlign = 'left';
+        }
+      } else if (obj.type === 'trailGoal') {
+        const {sx, sy} = obj;
+        ctx.fillStyle = '#FFD700'; ctx.fillRect(sx-3, sy-65, 6, 65);
+        ctx.fillStyle = '#FF4444'; ctx.fillRect(sx, sy-65, 48, 28);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('ZIEL', sx+8, sy-45);
       }
     }
 
@@ -2341,6 +2279,41 @@ const Game = {
       ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '8px sans-serif';
       ctx.fillText('Scroll=Zoom  Q/R=Drehen', cx2, cy2 + r + 14);
       ctx.textAlign = 'left'; }
+
+    // Mini-game HUD bar at top of canvas
+    if (Training.active) {
+      const done = Training.checkpoints.filter(c => c.done).length;
+      const total = Training.checkpoints.length;
+      const timer = Math.max(0, Training.phaseTimer).toFixed(1);
+      ctx.fillStyle = 'rgba(0,0,0,0.72)';
+      ctx.fillRect(0, 0, CANVAS_W, 44);
+      ctx.fillStyle = '#FFD700'; ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(`Training: ${Training.phases[Training.phase]||''} | Punkte: ${Training.score} | Kegel: ${done}/${total} | Zeit: ${timer}s`, CANVAS_W/2, 18);
+      ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(CANVAS_W/2-160, 26, 320, 9);
+      ctx.fillStyle = '#4A7C2F'; ctx.fillRect(CANVAS_W/2-160, 26, 320*(done/Math.max(1,total)), 9);
+      ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '10px sans-serif';
+      ctx.fillText('ESC: Abbrechen', CANVAS_W-60, 18); ctx.textAlign = 'left';
+    }
+    if (TrailRide.active) {
+      const remaining = Math.max(0, TrailRide.duration - TrailRide.elapsed).toFixed(1);
+      ctx.fillStyle = 'rgba(0,0,0,0.72)'; ctx.fillRect(0, 0, CANVAS_W, 36);
+      ctx.fillStyle = '#FFD700'; ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(`Trail-Ausritt | Münzen: ${TrailRide.coinsCollected} | Zeit: ${remaining}s | Reite zum Ziel am Ende des Pfades!`, CANVAS_W/2, 22);
+      ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '10px sans-serif';
+      ctx.fillText('ESC: Abbrechen', CANVAS_W-60, 22); ctx.textAlign = 'left';
+    }
+    if (Tournament.active) {
+      ctx.fillStyle = 'rgba(0,0,0,0.72)'; ctx.fillRect(0, 0, CANVAS_W, 36);
+      ctx.fillStyle = '#FFD700'; ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center';
+      if (Tournament.type === 'jumping') {
+        ctx.fillText(`Springturnier | Hindernis: ${Math.min(Tournament.jumpIdx+1, Tournament.obstacles.length)}/${Tournament.obstacles.length} | Strafpunkte: ${Tournament.faults} | LEERTASTE zum Springen!`, CANVAS_W/2, 22);
+      } else {
+        const tl = Math.max(0, Tournament.dressageTimer).toFixed(1);
+        ctx.fillText(`Dressurturnier | Buchstabe ${Math.min(Tournament.dressagePhase+1,8)}/8 | Punkte: ${Tournament.dressageScore} | Zeit: ${tl}s`, CANVAS_W/2, 22);
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '10px sans-serif';
+      ctx.fillText('ESC: Abbrechen', CANVAS_W-60, 22); ctx.textAlign = 'left';
+    }
 
     this.updateMinimap();
   },
@@ -2383,13 +2356,6 @@ const Game = {
 
     ctx.restore();
   }
-};
-
-// Hook dressage key presses
-const origOnKeyDown=Input.onKeyDown.bind(Input);
-Input.onKeyDown=function(k,e){
-  origOnKeyDown(k,e);
-  if(Tournament.active&&Tournament.type==='dressage') Tournament._dressageKeyPress(k);
 };
 
 // Start game
