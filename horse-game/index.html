@@ -70,7 +70,7 @@ canvas { display: block; border: 2px solid #4A7C2F; }
     <div id="interactPrompt"></div>
     <div id="notifications"></div>
     <div id="statusBar"></div>
-    <div id="cameraHint">Rechtsklick + Ziehen = Kamera schwenken &nbsp;|&nbsp; Q/R = Drehen &nbsp;|&nbsp; C = Zentrieren</div>
+    <div id="cameraHint">Rechtsklick + Ziehen = Kamera drehen/neigen &nbsp;|&nbsp; Scrollrad = Zoom &nbsp;|&nbsp; Q/R = 90° Drehen &nbsp;|&nbsp; C = Reset</div>
     <div id="horseMenu"></div>
   </div>
   <div id="panel">
@@ -473,22 +473,18 @@ function shadeColor(hex, amount) {
   return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
 }
 
-// World tile → screen pixel (isometric projection with camera rotation)
+// World tile → screen pixel — continuous isometric projection with free camera orbit
 function tileToScreen(tx, ty) {
-  if (camRotation !== 0 && Game.player) {
-    const ptx = Game.player.x / TILE, pty = Game.player.y / TILE;
-    const dx = tx - ptx, dy = ty - pty;
-    let rx, ry;
-    switch (camRotation) {
-      case 1: rx = -dy; ry =  dx; break;  // 90° CW camera
-      case 2: rx = -dx; ry = -dy; break;  // 180°
-      case 3: rx =  dy; ry = -dx; break;  // 270° CW camera
-    }
-    tx = rx + ptx; ty = ry + pty;
-  }
+  const ptx = Game.player ? Game.player.x / TILE : WORLD_W / 2;
+  const pty = Game.player ? Game.player.y / TILE : WORLD_H / 2;
+  const dx = tx - ptx, dy = ty - pty;
+  const ca = Math.cos(camAngle), sa = Math.sin(camAngle);
+  // Rotate tile coords around player, then project isometrically
+  const hw = (ISO_W / 2) * camZoom;
+  const hh = camPitchH * camZoom;
   return {
-    x: (tx - ty) * (ISO_W / 2) - cam.x + CANVAS_W / 2 + camPan.x,
-    y: (tx + ty) * (ISO_H / 2) - cam.y + CANVAS_H / 3 + camPan.y
+    x: (dx * (ca - sa) - dy * (sa + ca)) * hw + CANVAS_W / 2,
+    y: (dx * (ca + sa) + dy * (ca - sa)) * hh + CANVAS_H / 3
   };
 }
 function worldToScreen(wx, wy) {
@@ -633,9 +629,9 @@ const Input = {
     if (k==='escape') UI.closePanel();
     if (k==='tab') { e.preventDefault(); UI.toggleInventory(); }
     if (k===' ') Game.actionPress();
-    if (k==='c') { camPan.x=0; camPan.y=0; UI.notify('Kamera zentriert'); }
-    if (k==='q') { camRotation=(camRotation+3)%4; camPan.x=0; camPan.y=0; }
-    if (k==='r') { camRotation=(camRotation+1)%4; camPan.x=0; camPan.y=0; }
+    if (k==='c') { camAngle=0; camPitchH=ISO_H/2; camZoom=1.0; UI.notify('Kamera zurückgesetzt'); }
+    if (k==='q') { camAngle -= Math.PI/2; }
+    if (k==='r') { camAngle += Math.PI/2; }
   },
   isDown(k) { return !!this.keys[k]; }
 };
@@ -1466,9 +1462,13 @@ const UI = {
 // ===== ISOMETRIC TILE RENDERER =====
 // sx,sy = screen center of the diamond tile
 function isoPath(ctx, sx, sy) {
+  // Expand 1px beyond exact diamond to prevent seams between tiles
   ctx.beginPath();
-  ctx.moveTo(sx, sy-ISO_H/2); ctx.lineTo(sx+ISO_W/2, sy);
-  ctx.lineTo(sx, sy+ISO_H/2); ctx.lineTo(sx-ISO_W/2, sy); ctx.closePath();
+  ctx.moveTo(sx,              sy - ISO_H/2 - 1);
+  ctx.lineTo(sx + ISO_W/2 + 1, sy);
+  ctx.lineTo(sx,              sy + ISO_H/2 + 1);
+  ctx.lineTo(sx - ISO_W/2 - 1, sy);
+  ctx.closePath();
 }
 function isoDiamondGrad(ctx, sx, sy, c0, c1) {
   const g = ctx.createLinearGradient(sx-ISO_W/2, sy-ISO_H/2, sx+ISO_W/2, sy+ISO_H/2);
@@ -1614,14 +1614,10 @@ function drawTile(ctx, tileType, sx, sy, time) {
 }
 
 // ===== CAMERA =====
-const cam = { x: 0, y: 0 };
-const camPan = { x: 0, y: 0 };   // user-controlled offset (right-click drag)
-let camRotation = 0;              // 0=SW view, 1=NW, 2=NE, 3=SE (90° CW steps)
-function updateCamera(player) {
-  const tx = player.x / TILE, ty = player.y / TILE;
-  cam.x = (tx - ty) * (ISO_W / 2);
-  cam.y = (tx + ty) * (ISO_H / 2);
-}
+let camAngle = 0;           // Azimuth in radians (0 = original SW view)
+let camPitchH = ISO_H / 2; // Effective tile half-height — controls vertical tilt (pitch)
+let camZoom = 1.0;          // Zoom factor
+function updateCamera() { /* player always centred — nothing to update */ }
 
 // ===== GAME =====
 const Game = {
@@ -1654,23 +1650,25 @@ const Game = {
     UI.init();
     this.drawMinimap();
 
-    // Right-click drag to pan camera
-    let dragStart = null;
+    // Right-click drag: horizontal = rotate camera, vertical = change pitch (like Star Stable)
+    let rcDragging = false, rcLastX = 0, rcLastY = 0;
     this.canvas.addEventListener('mousedown', e => {
-      if (e.button === 1 || e.button === 2) {
-        dragStart = { mx: e.clientX, my: e.clientY, px: camPan.x, py: camPan.y };
-        e.preventDefault();
-      }
+      if (e.button === 2) { rcDragging = true; rcLastX = e.clientX; rcLastY = e.clientY; e.preventDefault(); }
     });
     window.addEventListener('mousemove', e => {
-      if (!dragStart) return;
-      camPan.x = dragStart.px + (e.clientX - dragStart.mx);
-      camPan.y = dragStart.py + (e.clientY - dragStart.my);
+      if (!rcDragging) return;
+      const ddx = e.clientX - rcLastX, ddy = e.clientY - rcLastY;
+      camAngle += ddx * 0.007;                                         // horizontal = rotate
+      camPitchH = Math.max(12, Math.min(44, camPitchH - ddy * 0.25)); // vertical = pitch
+      rcLastX = e.clientX; rcLastY = e.clientY;
     });
-    window.addEventListener('mouseup', e => {
-      if (e.button === 1 || e.button === 2) dragStart = null;
-    });
+    window.addEventListener('mouseup', e => { if (e.button === 2) rcDragging = false; });
     this.canvas.addEventListener('contextmenu', e => e.preventDefault());
+    // Scroll wheel zoom
+    this.canvas.addEventListener('wheel', e => {
+      camZoom = Math.max(0.4, Math.min(2.5, camZoom - e.deltaY * 0.001));
+      e.preventDefault();
+    }, { passive: false });
 
     // Left-click on horse → context menu
     this.canvas.addEventListener('click', e => {
@@ -1711,7 +1709,7 @@ const Game = {
     for (const npc of this.npcs) npc.update(dt, this.world);
     if (this.player.activeHorse) this.player.animT += dt;
     this.checkInteractions();
-    updateCamera(this.player);
+    updateCamera();
     UI.updateStatus(this.getStatusText());
   },
 
@@ -1719,17 +1717,12 @@ const Game = {
     const p = this.player;
     const spd = p.activeHorse ? 250 : 150;
     let dx=0, dy=0;
-    // Movement directions rotate with camera so WASD stays screen-relative
-    const D=[
-      {w:[-1,-1],s:[1,1],  a:[-1,1], d:[1,-1]},
-      {w:[-1,1], s:[1,-1], a:[1,1],  d:[-1,-1]},
-      {w:[1,1],  s:[-1,-1],a:[1,-1], d:[-1,1]},
-      {w:[1,-1], s:[-1,1], a:[-1,-1],d:[1,1]},
-    ][camRotation];
-    if (Input.isDown('w')||Input.isDown('arrowup'))    { dx+=D.w[0]; dy+=D.w[1]; p.dir='up'; }
-    if (Input.isDown('s')||Input.isDown('arrowdown'))  { dx+=D.s[0]; dy+=D.s[1]; p.dir='down'; }
-    if (Input.isDown('a')||Input.isDown('arrowleft'))  { dx+=D.a[0]; dy+=D.a[1]; p.dir='left'; }
-    if (Input.isDown('d')||Input.isDown('arrowright')) { dx+=D.d[0]; dy+=D.d[1]; p.dir='right'; }
+    // Continuous camera-relative movement (works for any camAngle)
+    const ca = Math.cos(camAngle), sa = Math.sin(camAngle);
+    if (Input.isDown('w')||Input.isDown('arrowup'))    { dx -= (ca+sa); dy += (sa-ca); p.dir='up'; }
+    if (Input.isDown('s')||Input.isDown('arrowdown'))  { dx += (ca+sa); dy -= (sa-ca); p.dir='down'; }
+    if (Input.isDown('a')||Input.isDown('arrowleft'))  { dx += (sa-ca); dy += (sa+ca); p.dir='left'; }
+    if (Input.isDown('d')||Input.isDown('arrowright')) { dx += (ca-sa); dy -= (sa+ca); p.dir='right'; }
 
     if (dx!==0||dy!==0) {
       const len=Math.sqrt(dx*dx+dy*dy);
@@ -2150,15 +2143,23 @@ const Game = {
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-    // Compass rose (top-right corner)
-    const compassLabels = ['↖N', '↗N', '↘N', '↙N'];
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.beginPath(); ctx.arc(CANVAS_W - 30, 30, 22, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#FFD700'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(compassLabels[camRotation], CANVAS_W - 30, 27);
-    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '8px sans-serif';
-    ctx.fillText('Q / R', CANVAS_W - 30, 40);
-    ctx.textAlign = 'left';
+    // Compass rose (top-right corner) — arrow points toward world-north
+    { const cx2 = CANVAS_W - 30, cy2 = 30, r = 18;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.beginPath(); ctx.arc(cx2, cy2, r + 3, 0, Math.PI*2); ctx.fill();
+      // N arrow: world north is in the -camAngle direction on screen
+      const na = -camAngle - Math.PI/2;
+      ctx.save(); ctx.translate(cx2, cy2); ctx.rotate(na);
+      ctx.fillStyle = '#FF4444';
+      ctx.beginPath(); ctx.moveTo(0, -r); ctx.lineTo(4, 4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#888';
+      ctx.beginPath(); ctx.moveTo(0, r); ctx.lineTo(4, -4); ctx.lineTo(-4, -4); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#FFD700'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('N', cx2 + Math.cos(na - Math.PI/2) * (r - 4), cy2 + Math.sin(na - Math.PI/2) * (r - 4) + 3);
+      ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '8px sans-serif';
+      ctx.fillText('Scroll=Zoom  Q/R=Drehen', cx2, cy2 + r + 14);
+      ctx.textAlign = 'left'; }
 
     this.updateMinimap();
   },
