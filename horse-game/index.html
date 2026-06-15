@@ -1878,6 +1878,9 @@ const Game = {
     const h = p.horses[idx];
     if (!h || p.activeHorse === h) return;
     if (p.leadHorse === h) {
+      // Park lead horse beside player before releasing
+      h.x = p.x + TILE * 0.8;
+      h.y = p.y;
       p.leadHorse = null;
       UI.notify(`${h.name} losgelassen`);
     } else {
@@ -1928,6 +1931,9 @@ const Game = {
   setActiveHorse(idx) {
     const p=this.player;
     if (p.activeHorse===p.horses[idx]) {
+      // Park horse at current player position before dismounting
+      p.activeHorse.x = p.x;
+      p.activeHorse.y = p.y;
       p.activeHorse=null;
       UI.notify('Abgesessen');
     } else {
@@ -2044,11 +2050,12 @@ const Game = {
     const signPos = tileToScreen(signTX, signTY);
     objects.push({ depth: signPos.y, subDepth: 0.5, type: 'sign', sx: signPos.x, sy: signPos.y });
 
-    // Lead horse — depth = screen_y + small offset so it draws after ground tiles at same position
+    // Lead horse — sort by current TILE (floor) so entity always draws after its ground tile
     if (p.leadHorse) {
       const lpos = worldToScreen(p.leadHorse.x, p.leadHorse.y);
       if (lpos.x > -100 && lpos.x < CANVAS_W + 100) {
-        objects.push({ depth: lpos.y + 0.5, subDepth: 0, type: 'leadhorse', sx: lpos.x, sy: lpos.y });
+        const ltile = tileToScreen(Math.floor(p.leadHorse.x/TILE), Math.floor(p.leadHorse.y/TILE));
+        objects.push({ depth: ltile.y, subDepth: 1, type: 'leadhorse', sx: lpos.x, sy: lpos.y });
       }
     }
 
@@ -2056,13 +2063,15 @@ const Game = {
     for (const npc of this.npcs) {
       const npos = worldToScreen(npc.x, npc.y);
       if (npos.x > -100 && npos.x < CANVAS_W + 100) {
-        objects.push({ depth: npos.y + 0.5, subDepth: 0, type: 'npc', npc, sx: npos.x, sy: npos.y });
+        const ntile = tileToScreen(Math.floor(npc.x/TILE), Math.floor(npc.y/TILE));
+        objects.push({ depth: ntile.y, subDepth: 1, type: 'npc', npc, sx: npos.x, sy: npos.y });
       }
     }
 
-    // Player — same screen_y as ground tile but drawn after it (+ 0.5)
+    // Player — sort by current tile (floor), draw at actual screen pos
     const ppos = worldToScreen(p.x, p.y);
-    objects.push({ depth: ppos.y + 0.5, subDepth: 0, type: 'player', sx: ppos.x, sy: ppos.y });
+    const ptile = tileToScreen(Math.floor(p.x/TILE), Math.floor(p.y/TILE));
+    objects.push({ depth: ptile.y, subDepth: 1, type: 'player', sx: ppos.x, sy: ppos.y });
 
     // Z-sort by screen Y (handles all camera rotations correctly)
     objects.sort((a, b) => a.depth - b.depth || a.subDepth - b.subDepth);
@@ -2087,20 +2096,30 @@ const Game = {
       } else if (obj.type === 'player') {
         if (p.activeHorse) {
           drawHorse(ctx, obj.sx, obj.sy, p.activeHorse.color, p.dir, p.animT, p.activeHorse.equipment);
-          drawRider(ctx, obj.sx, obj.sy - 18, p.dir, p.outfit);
+          drawRider(ctx, obj.sx, obj.sy + 4, p.dir, p.outfit);
+          // Horse name chip above rider
+          ctx.fillStyle = 'rgba(0,0,0,0.72)';
+          const hn = p.activeHorse.name;
+          ctx.font = 'bold 11px sans-serif';
+          const hw = ctx.measureText('🐎 ' + hn).width;
+          ctx.fillRect(obj.sx - hw/2 - 5, obj.sy - 72, hw + 10, 17);
+          ctx.fillStyle = '#FFD700';
+          ctx.textAlign = 'center';
+          ctx.fillText('🐎 ' + hn, obj.sx, obj.sy - 59);
+          ctx.textAlign = 'left';
         } else {
           this._drawWalker(ctx, obj.sx, obj.sy, p.dir, p.animT, p.outfit);
         }
       } else if (obj.type === 'npc') {
         const npc = obj.npc;
         drawHorse(ctx, obj.sx, obj.sy, npc.horse.color, npc.dir, npc.animT, {});
-        drawRider(ctx, obj.sx, obj.sy - 30, npc.dir, {helmetColor:'#333',jacketColor:'#8B0000',pantsColor:'#F0F0F0',bootsColor:'#1a1a1a'});
+        drawRider(ctx, obj.sx, obj.sy + 4, npc.dir, {helmetColor:'#333',jacketColor:'#8B0000',pantsColor:'#F0F0F0',bootsColor:'#1a1a1a'});
         // Name tag
         ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.font = '12px sans-serif';
         const tw = ctx.measureText(npc.name).width;
         ctx.fillRect(obj.sx - tw/2 - 4, obj.sy - 80, tw + 8, 18);
         ctx.fillStyle = '#FFD700';
-        ctx.font = '12px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(npc.name, obj.sx, obj.sy - 67);
         ctx.textAlign = 'left';
