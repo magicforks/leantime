@@ -94,6 +94,8 @@ canvas { display: block; border: 2px solid #4A7C2F; }
 <script>
 'use strict';
 
+const VERSION = '2026.06.1';
+
 // ===== CONSTANTS =====
 const TILE = 48;
 const ISO_W = 96;
@@ -2279,6 +2281,12 @@ const Game = {
       ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '8px sans-serif';
       ctx.fillText('Scroll=Zoom  Q/R=Drehen', cx2, cy2 + r + 14);
       ctx.textAlign = 'left'; }
+    // Version watermark
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('v' + VERSION, CANVAS_W - 6, CANVAS_H - 6);
+    ctx.textAlign = 'left';
 
     // Mini-game HUD bar at top of canvas
     if (Training.active) {
