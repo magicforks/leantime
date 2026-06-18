@@ -1676,6 +1676,9 @@ const Game = {
     this.shopkeeper = { x: 55*TILE+24, y: 22*TILE+24 };
     this.shopGreeted = false;
     this.shopPlayerInside = false;
+    this.stableSlots = new Array(6).fill(null); // horse|null für die 6 Pferdeboxen
+    this.paddockHorses = [];                    // Pferde auf der Koppel
+    this.stableGreeted = false;
     Input.init();
     UI.init();
     this.drawMinimap();
@@ -1740,6 +1743,13 @@ const Game = {
 
     if (!Training.active && !TrailRide.active && !Tournament.active) {
       this.checkInteractions();
+    }
+    // Paddock-Pferde wandern
+    for (const h of this.paddockHorses) {
+      h._wt = (h._wt||0) + dt;
+      if (h._wt > 2.5) { h._wt = 0; h._wx = (Math.random()-0.5)*2; h._wy = (Math.random()-0.5)*2; }
+      h.x = Math.max(50*TILE, Math.min(57*TILE, h.x + (h._wx||0)*28*dt));
+      h.y = Math.max(7*TILE,  Math.min(17*TILE, h.y + (h._wy||0)*28*dt));
     }
     // Shop-Begrüßung
     const pr2 = this.player.tileR(), pc2 = this.player.tileC();
@@ -1809,19 +1819,43 @@ const Game = {
     const pr=p.tileR(), pc=p.tileC();
     this.interactionZone=null;
 
-    // Near stable door (shop inside stable)
-    if (pr>=6&&pr<=14&&pc>=31&&pc<=44) {
-      // Near stalls
-      const stallCols=[[31,35],[40,44]];
-      const stallRows=[6,8,10];
-      for (const sr of stallRows) {
-        for (const [sc1,sc2] of stallCols) {
-          if (pr>=sr&&pr<=sr+1&&pc>=sc1&&pc<=sc2) {
-            UI.showPrompt('E: Stallmanagement');
-            this.interactionZone={type:'stall', stallId:stallRows.indexOf(sr)};
-            return;
-          }
+    // Koppel-Tor (Paddock 1 gate bei Zeile 18, Spalten 52-53)
+    if ((pr>=17&&pr<=19)&&(pc>=51&&pc<=54)) {
+      if (p.activeHorse) {
+        UI.showPrompt('E: ' + p.activeHorse.name + ' auf Koppel schicken 🐴');
+        this.interactionZone = {type:'paddock_gate', action:'send'};
+      } else if (this.paddockHorses.length > 0) {
+        UI.showPrompt('E: Pferd von Koppel holen (' + this.paddockHorses.length + ')');
+        this.interactionZone = {type:'paddock_gate', action:'get'};
+      }
+      if (this.interactionZone) return;
+    }
+
+    // Pferdeboxen im Stall (6 Slots)
+    for (let i = 0; i < STALL_SLOTS.length; i++) {
+      const sl = STALL_SLOTS[i];
+      const dx = p.x - sl.wx, dy = p.y - sl.wy;
+      if (Math.sqrt(dx*dx+dy*dy) < 72) {
+        const horse = this.stableSlots[i];
+        if (horse) {
+          UI.showPrompt('E: ' + horse.name + ' aufsteigen');
+          this.interactionZone = {type:'stall_slot', slotIdx:i};
+        } else if (p.activeHorse) {
+          UI.showPrompt('E: ' + p.activeHorse.name + ' hier einstellen');
+          this.interactionZone = {type:'stall_slot_empty', slotIdx:i};
+        } else {
+          UI.showPrompt(sl.label + ' — leer');
+          this.interactionZone = {type:'stall_slot_empty', slotIdx:i};
         }
+        return;
+      }
+    }
+
+    // Near stable door (legacy stall management)
+    if (pr>=6&&pr<=14&&pc>=31&&pc<=44) {
+      // Willkommen im Stall
+      if (!this.stableGreeted) {
+        // greeting fires once in update
       }
     }
 
@@ -1888,10 +1922,61 @@ const Game = {
     else if (z.type==='arena') Training.start();
     else if (z.type==='trail') TrailRide.start();
     else if (z.type==='tournament') Tournament.showSelection();
-    else if (z.type==='stable_enter') UI.notify('Willkommen im Stall! Gehe zu den Ständen oder zum Shop.');
+    else if (z.type==='stable_enter') UI.notify('Willkommen im Stall!');
+    else if (z.type==='stall_slot') {
+      const h = this.stableSlots[z.slotIdx];
+      if (h) {
+        this.stableSlots[z.slotIdx] = null;
+        if (this.player.activeHorse) {
+          // aktives Pferd in die alte Box stellen, neues nehmen
+          this.stableSlots[z.slotIdx] = this.player.activeHorse;
+          this.player.activeHorse.x = STALL_SLOTS[z.slotIdx].wx;
+          this.player.activeHorse.y = STALL_SLOTS[z.slotIdx].wy;
+        }
+        this.player.activeHorse = h;
+        h.x = this.player.x; h.y = this.player.y;
+        UI.notify('Aufgesessen auf ' + h.name + '!');
+      }
+    }
+    else if (z.type==='stall_slot_empty') {
+      const h = this.player.activeHorse;
+      if (h) {
+        h.x = STALL_SLOTS[z.slotIdx].wx;
+        h.y = STALL_SLOTS[z.slotIdx].wy;
+        this.stableSlots[z.slotIdx] = h;
+        this.player.activeHorse = null;
+        UI.notify(h.name + ' in Box ' + (z.slotIdx+1) + ' eingestellt.');
+      }
+    }
+    else if (z.type==='paddock_gate') {
+      if (z.action === 'send') {
+        const h = this.player.activeHorse;
+        if (h) {
+          h.x = 53*TILE+24; h.y = 11*TILE+24;
+          h._wt = 0; h._wx = 0; h._wy = 0;
+          this.paddockHorses.push(h);
+          this.player.activeHorse = null;
+          UI.notify(h.name + ' ist auf der Koppel.');
+        }
+      } else {
+        if (this.paddockHorses.length === 1) {
+          const h = this.paddockHorses.pop();
+          h.x = this.player.x + TILE; h.y = this.player.y;
+          this.player.activeHorse = h;
+          UI.notify(h.name + ' von Koppel geholt!');
+        } else {
+          let html = '<p style="color:#aaa;margin-bottom:10px">Welches Pferd möchtest du holen?</p>';
+          this.paddockHorses.forEach((h,i) => {
+            html += '<div class="shop-item"><div style="display:flex;align-items:center;gap:8px"><div style="width:10px;height:10px;border-radius:50%;background:' + h.color + '"></div><span>' + h.name + '</span></div>' +
+              '<button class="btn btn-primary" onclick="Game.getPaddockHorse(' + i + ');UI.closePanel()">Holen</button></div>';
+          });
+          UI.showPanel('Pferd von Koppel holen', html);
+        }
+      }
+    }
     else if (z.type==='npc') {
       const npc=z.npc;
-      UI.notify(`${npc.name}: "Hallo! Schöner Tag zum Reiten!"`);
+      UI.notify(npc.name + ': "Hallo! Schöner Tag zum Reiten!"');
     }
   },
 
@@ -1979,6 +2064,14 @@ const Game = {
       p.activeHorse=p.horses[idx];
       UI.notify(`Aufgesessen auf ${p.horses[idx].name}!`);
     }
+  },
+
+  getPaddockHorse(idx) {
+    const h = this.paddockHorses.splice(idx, 1)[0];
+    if (!h) return;
+    h.x = this.player.x + TILE; h.y = this.player.y;
+    this.player.activeHorse = h;
+    UI.notify(h.name + ' von Koppel geholt!');
   },
 
   setOutfitColor(key, color) {
@@ -2143,6 +2236,25 @@ const Game = {
     const sktile = tileToScreen(Math.floor(this.shopkeeper.x/TILE), Math.floor(this.shopkeeper.y/TILE));
     objects.push({ depth: sktile.y, subDepth: 1, type: 'shopkeeper', sx: skpos.x, sy: skpos.y });
 
+    // Eingestallte Pferde in den Boxen
+    for (let i = 0; i < 6; i++) {
+      const h = this.stableSlots[i];
+      if (!h) continue;
+      const sl = STALL_SLOTS[i];
+      const hpos = worldToScreen(sl.wx, sl.wy);
+      const htile = tileToScreen(sl.tc, sl.tr);
+      objects.push({depth: htile.y, subDepth: 0.9, type:'stabledHorse', horse:h, slotIdx:i, sx:hpos.x, sy:hpos.y});
+    }
+    // Pferde auf Koppel
+    for (const h of this.paddockHorses) {
+      const hpos = worldToScreen(h.x, h.y);
+      const htile = tileToScreen(Math.floor(h.x/TILE), Math.floor(h.y/TILE));
+      objects.push({depth: htile.y, subDepth: 0.9, type:'paddockHorse', horse:h, sx:hpos.x, sy:hpos.y});
+    }
+    // Koppel-Tor-Schild
+    const gatePos = tileToScreen(52, 18);
+    objects.push({depth: gatePos.y - 2, subDepth: 0.3, type:'paddockGate', sx: gatePos.x, sy: gatePos.y});
+
     // Player — sort by current tile (floor), draw at actual screen pos
     const ppos = worldToScreen(p.x, p.y);
     const ptile = tileToScreen(Math.floor(p.x/TILE), Math.floor(p.y/TILE));
@@ -2264,6 +2376,37 @@ const Game = {
         ctx.fillRect(obj.sx - skw/2 - 4, obj.sy - 80, skw+8, 17);
         ctx.fillStyle = '#FFD700'; ctx.textAlign = 'center';
         ctx.fillText('Maria', obj.sx, obj.sy - 67);
+        ctx.textAlign = 'left';
+      } else if (obj.type === 'stabledHorse') {
+        drawHorse(ctx, obj.sx, obj.sy, obj.horse.color, 'down', 0, obj.horse.equipment);
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.font = '10px sans-serif';
+        const hn = obj.horse.name;
+        const hw = ctx.measureText(hn).width;
+        ctx.fillRect(obj.sx - hw/2 - 3, obj.sy - 76, hw+6, 14);
+        ctx.fillStyle = '#FFD700'; ctx.textAlign = 'center';
+        ctx.fillText(hn, obj.sx, obj.sy - 65); ctx.textAlign = 'left';
+      } else if (obj.type === 'paddockHorse') {
+        drawHorse(ctx, obj.sx, obj.sy, obj.horse.color, 'down', this.time * 0.5, obj.horse.equipment);
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.font = '10px sans-serif';
+        const phn = obj.horse.name;
+        const phw = ctx.measureText(phn).width;
+        ctx.fillRect(obj.sx - phw/2 - 3, obj.sy - 76, phw+6, 14);
+        ctx.fillStyle = '#90EE90'; ctx.textAlign = 'center';
+        ctx.fillText(phn, obj.sx, obj.sy - 65); ctx.textAlign = 'left';
+      } else if (obj.type === 'paddockGate') {
+        // Koppel-Tor Schild
+        ctx.fillStyle = '#5C3317';
+        ctx.fillRect(obj.sx - 2, obj.sy - 38, 4, 28);
+        ctx.fillRect(obj.sx + 28, obj.sy - 38, 4, 28);
+        ctx.fillStyle = '#8B4513';
+        ctx.fillRect(obj.sx - 2, obj.sy - 38, 30, 6);
+        ctx.fillRect(obj.sx - 2, obj.sy - 20, 30, 6);
+        ctx.fillStyle = '#F5DEB3';
+        ctx.fillRect(obj.sx - 26, obj.sy - 50, 58, 16);
+        ctx.fillStyle = '#3a1a00'; ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('🐴 KOPPEL', obj.sx + 14, obj.sy - 38);
         ctx.textAlign = 'left';
       } else if (obj.type === 'leadhorse') {
         drawHorse(ctx, obj.sx, obj.sy, p.leadHorse.color, p.leadHorse.dir, this.time, p.leadHorse.equipment);
