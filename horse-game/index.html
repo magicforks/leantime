@@ -132,6 +132,7 @@ class World {
     this._addPond();
     this._addTrees();
     this._addPaths();
+    this._addShop();
   }
   set(r,c,t) { if(r>=0&&r<WORLD_H&&c>=0&&c<WORLD_W) this.tiles[r][c]=t; }
   get(r,c) { if(r<0||r>=WORLD_H||c<0||c>=WORLD_W) return T.WALL; return this.tiles[r][c]; }
@@ -237,6 +238,24 @@ class World {
     for (let c=26; c<=31; c++) { this.set(40,c,T.PATH); }
     // dirt around stable entrance
     for (let c=34; c<=41; c++) this.set(16,c,T.DIRT);
+  }
+  _addShop() {
+    // Shop-Gebäude: Zeilen 20-34, Spalten 48-62
+    for(let r=20;r<=34;r++) for(let c=48;c<=62;c++){
+      if(r===20||r===34||c===48||c===62) this.set(r,c,T.WALL);
+      else this.set(r,c,T.STABLE_FLOOR);
+    }
+    // Nordtür: Zeile 20, Spalten 54-55
+    this.set(20,54,T.STABLE_FLOOR); this.set(20,55,T.STABLE_FLOOR);
+    // Südtür: Zeile 34, Spalten 54-55
+    this.set(34,54,T.STABLE_FLOOR); this.set(34,55,T.STABLE_FLOOR);
+    // Tresen-Reihe innen: Zeile 21, Spalten 49-61 = STALL-Kacheln
+    for(let c=49;c<=61;c++) this.set(21,c,T.STALL);
+    // Pfad-Verbindung (Zeilen 18-19 nach Osten, von Stall zu Shop)
+    for(let r=18;r<=19;r++) for(let c=39;c<=55;c++){
+      const t=this.get(r,c);
+      if(t===T.GRASS||t===T.FLOWER) this.set(r,c,T.DIRT);
+    }
   }
 }
 
@@ -604,6 +623,47 @@ class NPC {
     }
     return false;
   }
+}
+
+function drawShopkeeper(ctx, sx, sy) {
+  ctx.save();
+  ctx.translate(sx, sy - 20);
+  // Schatten
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.ellipse(1, 20, 9, 3, 0, 0, Math.PI*2); ctx.fill();
+  // Schuhe
+  ctx.fillStyle = '#5C3317';
+  ctx.fillRect(-6, 0, 4, 7); ctx.fillRect(3, 0, 4, 7);
+  // Rock (weiße Schürze)
+  ctx.fillStyle = '#F8F8FF';
+  ctx.beginPath(); ctx.moveTo(-7,-4); ctx.lineTo(8,-4); ctx.lineTo(10,0); ctx.lineTo(-9,0); ctx.closePath(); ctx.fill();
+  // Grüne Jacke
+  ctx.fillStyle = '#2E7D32';
+  ctx.fillRect(-7,-18,15,16);
+  // Schürze vorne
+  ctx.fillStyle = '#F8F8FF';
+  ctx.fillRect(-4,-16,9,14);
+  // Arme
+  ctx.fillStyle = '#2E7D32';
+  ctx.fillRect(-11,-18,4,11); ctx.fillRect(8,-18,4,11);
+  // Hände
+  ctx.fillStyle = '#F5C5A0';
+  ctx.beginPath(); ctx.arc(-9,-7,2.5,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(10,-7,2.5,0,Math.PI*2); ctx.fill();
+  // Kopf
+  ctx.fillStyle = '#F5C5A0';
+  ctx.beginPath(); ctx.arc(1,-28,6,0,Math.PI*2); ctx.fill();
+  // Haare (braun, Dutt)
+  ctx.fillStyle = '#5C3317';
+  ctx.beginPath(); ctx.arc(1,-28,6.5,Math.PI,0); ctx.fill();
+  ctx.beginPath(); ctx.arc(1,-35,5,0,Math.PI*2); ctx.fill();
+  // Gesicht
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(-2,-28,1.3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(4,-28,1.3,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#c68642'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(1,-26,2.5,0,Math.PI); ctx.stroke();
+  ctx.restore();
 }
 
 // ===== INPUT =====
@@ -1582,6 +1642,9 @@ const Game = {
       new NPC('Sophie','#C4A27A', 6,  55),
       new NPC('Tom',   '#D4882A', 10, 61)
     ];
+    this.shopkeeper = { x: 55*TILE+24, y: 22*TILE+24 };
+    this.shopGreeted = false;
+    this.shopPlayerInside = false;
     Input.init();
     UI.init();
     this.drawMinimap();
@@ -1647,6 +1710,15 @@ const Game = {
     if (!Training.active && !TrailRide.active && !Tournament.active) {
       this.checkInteractions();
     }
+    // Shop-Begrüßung
+    const pr2 = this.player.tileR(), pc2 = this.player.tileC();
+    const inShop = pr2>=21&&pr2<=33&&pc2>=49&&pc2<=61;
+    if(inShop && !this.shopGreeted) {
+      this.shopGreeted = true;
+      UI.notify('Verkäuferin: "Guten Tag! Wie kann ich Ihnen helfen?" 👩');
+    }
+    if(!inShop) this.shopGreeted = false;
+    this.shopPlayerInside = inShop;
     updateCamera();
     UI.updateStatus(this.getStatusText());
   },
@@ -2009,6 +2081,13 @@ const Game = {
     const signPos = tileToScreen(signTX, signTY);
     objects.push({ depth: signPos.y, subDepth: 0.5, type: 'sign', sx: signPos.x, sy: signPos.y });
 
+    // Wegweiser zum Shop (bei Stall-Bereich)
+    const sign1Pos = tileToScreen(43, 19);
+    objects.push({ depth: sign1Pos.y, subDepth: 0.4, type: 'shopSign', sx: sign1Pos.x, sy: sign1Pos.y, label:'SHOP →' });
+    // Wegweiser bei Arena
+    const sign2Pos = tileToScreen(27, 37);
+    objects.push({ depth: sign2Pos.y, subDepth: 0.4, type: 'shopSign', sx: sign2Pos.x, sy: sign2Pos.y, label:'→ SHOP' });
+
     // Lead horse — sort by current TILE (floor) so entity always draws after its ground tile
     if (p.leadHorse) {
       const lpos = worldToScreen(p.leadHorse.x, p.leadHorse.y);
@@ -2153,6 +2232,17 @@ const Game = {
         ctx.textAlign = 'center';
         ctx.fillText('TURNIER', obj.sx, obj.sy - 41);
         ctx.fillText('E: Starten', obj.sx, obj.sy - 31);
+        ctx.textAlign = 'left';
+      } else if (obj.type === 'shopSign') {
+        ctx.fillStyle = '#5C3317';
+        ctx.fillRect(obj.sx - 2, obj.sy - 48, 4, 34);
+        ctx.fillStyle = '#F5DEB3';
+        ctx.fillRect(obj.sx - 32, obj.sy - 48, 66, 20);
+        ctx.fillStyle = '#3a1a00';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(obj.label, obj.sx + 1, obj.sy - 34);
+        ctx.fillText('Pferdeladen', obj.sx + 1, obj.sy - 24);
         ctx.textAlign = 'left';
       } else if (obj.type === 'trnCone') {
         const {cp, idx, sx, sy} = obj;
