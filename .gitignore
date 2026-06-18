@@ -134,3 +134,4 @@ config/.env
 /.idea
 /code_search_index/
 tests/Httprequests/http-client.private.env.json
+.claude/worktrees/
