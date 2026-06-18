@@ -34,6 +34,8 @@ canvas { display: block; border: 2px solid #4A7C2F; }
 .btn-action:hover { background: #aa5a2a; }
 .btn-primary { background: #4A7C2F; color: #fff; margin-top: 8px; }
 .btn-primary:hover { background: #5a9c3f; }
+.horse-shop-box { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.13); border-radius: 8px; padding: 10px; text-align: center; transition: border-color 0.18s; }
+.horse-shop-box:hover { border-color: rgba(255,215,0,0.45); }
 #statusBar { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.7); color: #ddd; padding: 5px 10px; border-radius: 6px; font-size: 12px; pointer-events: none; }
 #minimap { position: absolute; top: 10px; left: 10px; border: 1px solid #555; border-radius: 4px; pointer-events: none; }
 .horse-stat { font-size: 11px; color: #aaa; margin-top: 3px; }
@@ -1230,56 +1232,81 @@ const UI = {
   },
 
   showShop() {
-    this.panelType='shop';
-    const p=Game.player;
-    let html=`<div class="shop-section"><h3>🐴 Pferde kaufen</h3>`;
-    for (let i=0;i<BREEDS.length;i++) {
-      const b=BREEDS[i];
-      const owned=p.horses.some(h=>h.breed===b.name);
-      html+=`<div class="shop-item">
-        <div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <div style="width:14px;height:14px;border-radius:50%;background:${b.color};border:1px solid #555"></div>
-            <span class="item-name">${b.name}</span>
-          </div>
-          <div class="horse-stat">⚡${b.speed} 💪${b.stamina} 🦘${b.jump} 🎭${b.dressage}</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span class="item-price">${b.cost}💰</span>
-          <button class="btn btn-buy" onclick="Game.buyHorse(${i})" ${owned||p.money<b.cost?'disabled':''}>
-            ${owned?'Besitz':'Kaufen'}
-          </button>
+    this.panelType = 'shop';
+    const p = Game.player;
+    let html = `
+      <div style="text-align:center;margin-bottom:12px;padding:8px;background:rgba(255,215,0,0.08);border-radius:6px;color:#ddd;font-size:13px;font-style:italic;">
+        💬 "Guten Tag! Ich helfe Ihnen gerne weiter."
+      </div>
+      <div class="inventory-tabs" id="shopTabs">
+        <div class="inv-tab active" onclick="UI.switchShopTab('horses',this)">🐴 Pferde</div>
+        <div class="inv-tab" onclick="UI.switchShopTab('saddles',this)">🎠 Sättel</div>
+        <div class="inv-tab" onclick="UI.switchShopTab('bridles',this)">🎯 Zäume</div>
+        <div class="inv-tab" onclick="UI.switchShopTab('blankets',this)">🛡️ Decken</div>
+      </div>
+      <div id="shop-tab-horses" class="inv-content active">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:2px;">
+          ${BREEDS.map((b,i)=>{
+            const owned=p.horses.some(h=>h.breed===b.name);
+            const can=p.money>=b.cost;
+            return \`<div class="horse-shop-box">
+              <canvas id="shopHorse\${i}" width="90" height="68" style="display:block;margin:0 auto;border-radius:5px;background:rgba(0,0,0,0.35)"></canvas>
+              <div style="font-weight:bold;font-size:12px;color:#FFD700;margin-top:5px">\${b.name}</div>
+              <div style="font-size:10px;color:#aaa;margin:2px 0">⚡\${b.speed} 💪\${b.stamina} 🦘\${b.jump} 🎭\${b.dressage}</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px">
+                <span style="color:#FFD700;font-size:12px">\${b.cost}💰</span>
+                <button class="btn \${owned?'btn-equip':'btn-buy'}" onclick="Game.buyHorse(\${i})" \${owned||!can?'disabled':''} style="font-size:10px;padding:3px 9px">\${owned?'✓ Besitz':'Kaufen'}</button>
+              </div>
+            </div>\`;
+          }).join('')}
         </div>
       </div>`;
-    }
-    html+=`</div>`;
 
-    html+=`<div class="shop-section"><h3>🐎 Sättel</h3>`;
-    for (const item of EQUIPMENT_ITEMS.saddles) {
-      html+=`<div class="shop-item"><span class="item-name">${item.name}</span>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span class="item-price">${item.cost}💰</span>
-          <button class="btn btn-buy" onclick="Game.buyEquip('saddles','${item.name}')" ${p.money<item.cost?'disabled':''}>Kaufen</button>
-        </div></div>`;
+    ['saddles','bridles','blankets'].forEach(cat=>{
+      const icons={saddles:'🎠',bridles:'🎯',blankets:'🛡️'};
+      html+=`<div id="shop-tab-${cat}" class="inv-content">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:2px;">
+          ${EQUIPMENT_ITEMS[cat].map((item,i)=>{
+            const can=p.money>=item.cost;
+            return \`<div class="horse-shop-box">
+              <div style="width:90px;height:68px;margin:0 auto;display:flex;align-items:center;justify-content:center;border-radius:5px;background:rgba(0,0,0,0.35)">
+                <div style="text-align:center">
+                  <div style="font-size:24px">\${icons[cat]}</div>
+                  <div style="width:50px;height:12px;background:\${item.color};border-radius:3px;margin:6px auto 0;box-shadow:0 2px 5px rgba(0,0,0,0.5)"></div>
+                </div>
+              </div>
+              <div style="font-weight:bold;font-size:12px;color:#FFD700;margin-top:5px">\${item.name}</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px">
+                <span style="color:#FFD700;font-size:12px">\${item.cost}💰</span>
+                <button class="btn btn-buy" onclick="Game.buyEquip('\${cat}','\${item.name}')" \${!can?'disabled':''} style="font-size:10px;padding:3px 9px">Kaufen</button>
+              </div>
+            </div>\`;
+          }).join('')}
+        </div>
+      </div>`;
+    });
+
+    this.showPanel('🏪 Pferdeladen', html);
+    requestAnimationFrame(()=>this._renderShopHorseCanvases());
+  },
+
+  switchShopTab(name, el) {
+    document.querySelectorAll('#shopTabs .inv-tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('#panel .inv-content').forEach(c=>c.classList.remove('active'));
+    el.classList.add('active');
+    const content=document.getElementById('shop-tab-'+name);
+    if(content) content.classList.add('active');
+    if(name==='horses') requestAnimationFrame(()=>this._renderShopHorseCanvases());
+  },
+
+  _renderShopHorseCanvases() {
+    for(let i=0;i<BREEDS.length;i++){
+      const c=document.getElementById('shopHorse'+i);
+      if(!c) continue;
+      const ctx=c.getContext('2d');
+      ctx.clearRect(0,0,90,68);
+      drawHorse(ctx,38,60,BREEDS[i].color,'right',0.6,{},0.82);
     }
-    html+=`</div><div class="shop-section"><h3>🎯 Zäume</h3>`;
-    for (const item of EQUIPMENT_ITEMS.bridles) {
-      html+=`<div class="shop-item"><span class="item-name">${item.name}</span>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span class="item-price">${item.cost}💰</span>
-          <button class="btn btn-buy" onclick="Game.buyEquip('bridles','${item.name}')" ${p.money<item.cost?'disabled':''}>Kaufen</button>
-        </div></div>`;
-    }
-    html+=`</div><div class="shop-section"><h3>🛡️ Decken</h3>`;
-    for (const item of EQUIPMENT_ITEMS.blankets) {
-      html+=`<div class="shop-item"><span class="item-name">${item.name}</span>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span class="item-price">${item.cost}💰</span>
-          <button class="btn btn-buy" onclick="Game.buyEquip('blankets','${item.name}')" ${p.money<item.cost?'disabled':''}>Kaufen</button>
-        </div></div>`;
-    }
-    html+=`</div>`;
-    this.showPanel('Stallshop', html);
   },
   showStallMenu(stallId) {
     const p=Game.player;
@@ -1792,12 +1819,13 @@ const Game = {
           }
         }
       }
-      // North wall = shop area
-      if (pr<=8&&pc>=32&&pc<=43) {
-        UI.showPrompt('E: Shop öffnen');
-        this.interactionZone={type:'shop'};
-        return;
-      }
+    }
+
+    // Shop-Gebäude Zone
+    if (pr>=21&&pr<=33&&pc>=49&&pc<=61) {
+      UI.showPrompt('E: Shop öffnen');
+      this.interactionZone={type:'shop'};
+      return;
     }
 
     // Near stable door from outside
@@ -2106,6 +2134,11 @@ const Game = {
       }
     }
 
+    // Shopkeeper
+    const skpos = worldToScreen(this.shopkeeper.x, this.shopkeeper.y);
+    const sktile = tileToScreen(Math.floor(this.shopkeeper.x/TILE), Math.floor(this.shopkeeper.y/TILE));
+    objects.push({ depth: sktile.y, subDepth: 1, type: 'shopkeeper', sx: skpos.x, sy: skpos.y });
+
     // Player — sort by current tile (floor), draw at actual screen pos
     const ppos = worldToScreen(p.x, p.y);
     const ptile = tileToScreen(Math.floor(p.x/TILE), Math.floor(p.y/TILE));
@@ -2218,6 +2251,15 @@ const Game = {
         ctx.fillStyle = '#FFD700';
         ctx.textAlign = 'center';
         ctx.fillText(npc.name, obj.sx, obj.sy - 67);
+        ctx.textAlign = 'left';
+      } else if (obj.type === 'shopkeeper') {
+        drawShopkeeper(ctx, obj.sx, obj.sy);
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.font = '11px sans-serif';
+        const skw = ctx.measureText('Maria').width;
+        ctx.fillRect(obj.sx - skw/2 - 4, obj.sy - 80, skw+8, 17);
+        ctx.fillStyle = '#FFD700'; ctx.textAlign = 'center';
+        ctx.fillText('Maria', obj.sx, obj.sy - 67);
         ctx.textAlign = 'left';
       } else if (obj.type === 'leadhorse') {
         drawHorse(ctx, obj.sx, obj.sy, p.leadHorse.color, p.leadHorse.dir, this.time, p.leadHorse.equipment);
