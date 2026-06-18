@@ -66,7 +66,7 @@ export function tileRNG(tx, ty, n) {
 
 const _tileCache = new Map();
 const _TILE_CW = ISO_W + 8, _TILE_CH = 200;
-const _TILE_CX = (_TILE_CW) / 2, _TILE_CY = 165;
+export const _TILE_CX = (_TILE_CW) / 2, _TILE_CY = 165;
 
 export function getCachedTile(tileType, tx, ty) {
   if (tileType === T.WATER || tileType === T.FLOWER) return null;
