@@ -261,6 +261,17 @@ class World {
   }
 }
 
+// ===== STALL SLOTS (6 Pferdeboxen im Stall) =====
+// Linke Boxen: Spalten 31-35, rechte Boxen: Spalten 40-44
+const STALL_SLOTS = [
+  {tc:33,tr:6,  wx:33*48+24,wy:6*48+24,  label:'Box L1'},
+  {tc:33,tr:8,  wx:33*48+24,wy:8*48+24,  label:'Box L2'},
+  {tc:33,tr:10, wx:33*48+24,wy:10*48+24, label:'Box L3'},
+  {tc:42,tr:6,  wx:42*48+24,wy:6*48+24,  label:'Box R1'},
+  {tc:42,tr:8,  wx:42*48+24,wy:8*48+24,  label:'Box R2'},
+  {tc:42,tr:10, wx:42*48+24,wy:10*48+24, label:'Box R3'},
+];
+
 // ===== HORSE BREEDS =====
 const BREEDS = [
   {name:'Hannoveraner', speed:7, stamina:8, jump:6, dressage:7, cost:100, color:'#8B4513'},
@@ -1234,60 +1245,53 @@ const UI = {
   showShop() {
     this.panelType = 'shop';
     const p = Game.player;
-    let html = `
-      <div style="text-align:center;margin-bottom:12px;padding:8px;background:rgba(255,215,0,0.08);border-radius:6px;color:#ddd;font-size:13px;font-style:italic;">
-        💬 "Guten Tag! Ich helfe Ihnen gerne weiter."
-      </div>
-      <div class="inventory-tabs" id="shopTabs">
-        <div class="inv-tab active" onclick="UI.switchShopTab('horses',this)">🐴 Pferde</div>
-        <div class="inv-tab" onclick="UI.switchShopTab('saddles',this)">🎠 Sättel</div>
-        <div class="inv-tab" onclick="UI.switchShopTab('bridles',this)">🎯 Zäume</div>
-        <div class="inv-tab" onclick="UI.switchShopTab('blankets',this)">🛡️ Decken</div>
-      </div>
-      <div id="shop-tab-horses" class="inv-content active">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:2px;">
-          ${BREEDS.map((b,i)=>{
-            const owned=p.horses.some(h=>h.breed===b.name);
-            const can=p.money>=b.cost;
-            return \`<div class="horse-shop-box">
-              <canvas id="shopHorse\${i}" width="90" height="68" style="display:block;margin:0 auto;border-radius:5px;background:rgba(0,0,0,0.35)"></canvas>
-              <div style="font-weight:bold;font-size:12px;color:#FFD700;margin-top:5px">\${b.name}</div>
-              <div style="font-size:10px;color:#aaa;margin:2px 0">⚡\${b.speed} 💪\${b.stamina} 🦘\${b.jump} 🎭\${b.dressage}</div>
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px">
-                <span style="color:#FFD700;font-size:12px">\${b.cost}💰</span>
-                <button class="btn \${owned?'btn-equip':'btn-buy'}" onclick="Game.buyHorse(\${i})" \${owned||!can?'disabled':''} style="font-size:10px;padding:3px 9px">\${owned?'✓ Besitz':'Kaufen'}</button>
-              </div>
-            </div>\`;
-          }).join('')}
-        </div>
-      </div>`;
 
-    ['saddles','bridles','blankets'].forEach(cat=>{
-      const icons={saddles:'🎠',bridles:'🎯',blankets:'🛡️'};
-      html+=`<div id="shop-tab-${cat}" class="inv-content">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:2px;">
-          ${EQUIPMENT_ITEMS[cat].map((item,i)=>{
-            const can=p.money>=item.cost;
-            return \`<div class="horse-shop-box">
-              <div style="width:90px;height:68px;margin:0 auto;display:flex;align-items:center;justify-content:center;border-radius:5px;background:rgba(0,0,0,0.35)">
-                <div style="text-align:center">
-                  <div style="font-size:24px">\${icons[cat]}</div>
-                  <div style="width:50px;height:12px;background:\${item.color};border-radius:3px;margin:6px auto 0;box-shadow:0 2px 5px rgba(0,0,0,0.5)"></div>
-                </div>
-              </div>
-              <div style="font-weight:bold;font-size:12px;color:#FFD700;margin-top:5px">\${item.name}</div>
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px">
-                <span style="color:#FFD700;font-size:12px">\${item.cost}💰</span>
-                <button class="btn btn-buy" onclick="Game.buyEquip('\${cat}','\${item.name}')" \${!can?'disabled':''} style="font-size:10px;padding:3px 9px">Kaufen</button>
-              </div>
-            </div>\`;
-          }).join('')}
-        </div>
-      </div>`;
+    // Pferde-Karten
+    let horsesHtml = '';
+    BREEDS.forEach((b,i) => {
+      const owned = p.horses.some(h => h.breed === b.name);
+      const can = p.money >= b.cost;
+      horsesHtml += '<div class="horse-shop-box">' +
+        '<canvas id="shopHorse' + i + '" width="90" height="68" style="display:block;margin:0 auto;border-radius:5px;background:rgba(0,0,0,0.35)"></canvas>' +
+        '<div style="font-weight:bold;font-size:12px;color:#FFD700;margin-top:5px">' + b.name + '</div>' +
+        '<div style="font-size:10px;color:#aaa;margin:2px 0">⚡' + b.speed + ' 💪' + b.stamina + ' 🦘' + b.jump + ' 🎭' + b.dressage + '</div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px">' +
+        '<span style="color:#FFD700;font-size:12px">' + b.cost + '💰</span>' +
+        '<button class="btn ' + (owned ? 'btn-equip' : 'btn-buy') + '" onclick="Game.buyHorse(' + i + ')" ' + (owned || !can ? 'disabled' : '') + ' style="font-size:10px;padding:3px 9px">' + (owned ? '✓ Besitz' : 'Kaufen') + '</button>' +
+        '</div></div>';
+    });
+
+    let html = '<div style="text-align:center;margin-bottom:12px;padding:8px;background:rgba(255,215,0,0.08);border-radius:6px;color:#ddd;font-size:13px;font-style:italic;">💬 &quot;Guten Tag! Ich helfe Ihnen gerne weiter.&quot;</div>' +
+      '<div class="inventory-tabs" id="shopTabs">' +
+      '<div class="inv-tab active" onclick="UI.switchShopTab(\'horses\',this)">🐴 Pferde</div>' +
+      '<div class="inv-tab" onclick="UI.switchShopTab(\'saddles\',this)">🎠 Sättel</div>' +
+      '<div class="inv-tab" onclick="UI.switchShopTab(\'bridles\',this)">🎯 Zäume</div>' +
+      '<div class="inv-tab" onclick="UI.switchShopTab(\'blankets\',this)">🛡️ Decken</div>' +
+      '</div>' +
+      '<div id="shop-tab-horses" class="inv-content active">' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:2px;">' + horsesHtml + '</div></div>';
+
+    const icons = {saddles:'🎠', bridles:'🎯', blankets:'🛡️'};
+    ['saddles','bridles','blankets'].forEach(cat => {
+      let itemsHtml = '';
+      EQUIPMENT_ITEMS[cat].forEach(item => {
+        const can = p.money >= item.cost;
+        itemsHtml += '<div class="horse-shop-box">' +
+          '<div style="width:90px;height:68px;margin:0 auto;display:flex;align-items:center;justify-content:center;border-radius:5px;background:rgba(0,0,0,0.35)">' +
+          '<div style="text-align:center"><div style="font-size:24px">' + icons[cat] + '</div>' +
+          '<div style="width:50px;height:12px;background:' + item.color + ';border-radius:3px;margin:6px auto 0;box-shadow:0 2px 5px rgba(0,0,0,0.5)"></div></div></div>' +
+          '<div style="font-weight:bold;font-size:12px;color:#FFD700;margin-top:5px">' + item.name + '</div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px">' +
+          '<span style="color:#FFD700;font-size:12px">' + item.cost + '💰</span>' +
+          '<button class="btn btn-buy" onclick="Game.buyEquip(\'' + cat + '\',\'' + item.name + '\')" ' + (!can ? 'disabled' : '') + ' style="font-size:10px;padding:3px 9px">Kaufen</button>' +
+          '</div></div>';
+      });
+      html += '<div id="shop-tab-' + cat + '" class="inv-content">' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:2px;">' + itemsHtml + '</div></div>';
     });
 
     this.showPanel('🏪 Pferdeladen', html);
-    requestAnimationFrame(()=>this._renderShopHorseCanvases());
+    requestAnimationFrame(() => this._renderShopHorseCanvases());
   },
 
   switchShopTab(name, el) {
