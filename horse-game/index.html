@@ -109,7 +109,7 @@ const CANVAS_W = 900;
 const CANVAS_H = 600;
 
 const T = { GRASS:0, FLOWER:1, DIRT:2, STABLE_FLOOR:3, STALL:4, WALL:5, FENCE:6, TREE:7, WATER:8, ARENA:9, PATH:10, PADDOCK:11 };
-const SOLID = new Set([T.WALL, T.FENCE, T.TREE]);
+const SOLID = new Set([T.WALL, T.FENCE, T.TREE, T.STALL]);
 
 // ===== WORLD =====
 class World {
@@ -247,12 +247,10 @@ class World {
       if(r===20||r===34||c===48||c===62) this.set(r,c,T.WALL);
       else this.set(r,c,T.STABLE_FLOOR);
     }
-    // Nordtür: Zeile 20, Spalten 54-55
-    this.set(20,54,T.STABLE_FLOOR); this.set(20,55,T.STABLE_FLOOR);
-    // Südtür: Zeile 34, Spalten 54-55
+    // Nur Südtür (Eingang): Zeile 34, Spalten 54-55
     this.set(34,54,T.STABLE_FLOOR); this.set(34,55,T.STABLE_FLOOR);
-    // Tresen-Reihe innen: Zeile 21, Spalten 49-61 = STALL-Kacheln
-    for(let c=49;c<=61;c++) this.set(21,c,T.STALL);
+    // Tresen: Zeile 22, volle Breite STALL (solid – Maria steht in Zeile 21 dahinter)
+    for(let c=49;c<=61;c++) this.set(22,c,T.STALL);
     // Pfad-Verbindung (Zeilen 18-19 nach Osten, von Stall zu Shop)
     for(let r=18;r<=19;r++) for(let c=39;c<=55;c++){
       const t=this.get(r,c);
@@ -270,6 +268,33 @@ const STALL_SLOTS = [
   {tc:42,tr:6,  wx:42*48+24,wy:6*48+24,  label:'Box R1'},
   {tc:42,tr:8,  wx:42*48+24,wy:8*48+24,  label:'Box R2'},
   {tc:42,tr:10, wx:42*48+24,wy:10*48+24, label:'Box R3'},
+];
+
+// ===== SHOP HORSE DISPLAY SLOTS (linke Wand col 49, zweite Reihe col 52) =====
+const SHOP_HORSE_SLOTS = [
+  {tr:23,tc:49, wx:49*48+24,wy:23*48+24, breedIdx:0},
+  {tr:25,tc:49, wx:49*48+24,wy:25*48+24, breedIdx:1},
+  {tr:27,tc:49, wx:49*48+24,wy:27*48+24, breedIdx:2},
+  {tr:29,tc:49, wx:49*48+24,wy:29*48+24, breedIdx:3},
+  {tr:31,tc:49, wx:49*48+24,wy:31*48+24, breedIdx:4},
+  {tr:23,tc:52, wx:52*48+24,wy:23*48+24, breedIdx:5},
+  {tr:25,tc:52, wx:52*48+24,wy:25*48+24, breedIdx:6},
+  {tr:27,tc:52, wx:52*48+24,wy:27*48+24, breedIdx:7},
+  {tr:29,tc:52, wx:52*48+24,wy:29*48+24, breedIdx:8},
+  {tr:31,tc:52, wx:52*48+24,wy:31*48+24, breedIdx:9},
+];
+
+// ===== SHOP EQUIPMENT SLOTS (rechte Wand col 60, an Wand hängend) =====
+const SHOP_EQUIP_SLOTS = [
+  {tr:23,tc:60, wx:60*48+24,wy:23*48+24, cat:'saddles',  itemIdx:0},
+  {tr:25,tc:60, wx:60*48+24,wy:25*48+24, cat:'saddles',  itemIdx:1},
+  {tr:27,tc:60, wx:60*48+24,wy:27*48+24, cat:'saddles',  itemIdx:2},
+  {tr:29,tc:60, wx:60*48+24,wy:29*48+24, cat:'saddles',  itemIdx:3},
+  {tr:24,tc:60, wx:60*48+24,wy:24*48+24, cat:'bridles',  itemIdx:0},
+  {tr:26,tc:60, wx:60*48+24,wy:26*48+24, cat:'bridles',  itemIdx:1},
+  {tr:28,tc:60, wx:60*48+24,wy:28*48+24, cat:'blankets', itemIdx:0},
+  {tr:30,tc:60, wx:60*48+24,wy:30*48+24, cat:'blankets', itemIdx:1},
+  {tr:32,tc:60, wx:60*48+24,wy:32*48+24, cat:'blankets', itemIdx:2},
 ];
 
 // ===== HORSE BREEDS =====
@@ -1673,7 +1698,7 @@ const Game = {
       new NPC('Sophie','#C4A27A', 6,  55),
       new NPC('Tom',   '#D4882A', 10, 61)
     ];
-    this.shopkeeper = { x: 55*TILE+24, y: 22*TILE+24 };
+    this.shopkeeper = { x: 54*TILE+24, y: 21*TILE+24 };
     this.shopGreeted = false;
     this.shopPlayerInside = false;
     this.stableSlots = new Array(6).fill(null); // horse|null für die 6 Pferdeboxen
@@ -1753,7 +1778,7 @@ const Game = {
     }
     // Shop-Begrüßung
     const pr2 = this.player.tileR(), pc2 = this.player.tileC();
-    const inShop = pr2>=21&&pr2<=33&&pc2>=49&&pc2<=61;
+    const inShop = pr2>=23&&pr2<=33&&pc2>=49&&pc2<=61;
     if(inShop && !this.shopGreeted) {
       this.shopGreeted = true;
       UI.notify('Verkäuferin: "Guten Tag! Wie kann ich Ihnen helfen?" 👩');
@@ -1859,10 +1884,37 @@ const Game = {
       }
     }
 
-    // Shop-Gebäude Zone
-    if (pr>=21&&pr<=33&&pc>=49&&pc<=61) {
-      UI.showPrompt('E: Shop öffnen');
-      this.interactionZone={type:'shop'};
+    // Shop: Pferdeboxen (physisch in der Welt)
+    for (let i = 0; i < SHOP_HORSE_SLOTS.length; i++) {
+      const sl = SHOP_HORSE_SLOTS[i];
+      const dx = p.x - sl.wx, dy = p.y - sl.wy;
+      if (Math.sqrt(dx*dx+dy*dy) < 80) {
+        const b = BREEDS[sl.breedIdx];
+        const owned = p.horses.some(h => h.breed === b.name);
+        if (owned) {
+          UI.showPrompt(b.name + ' – bereits in deinem Besitz');
+        } else {
+          UI.showPrompt('E: ' + b.name + ' kaufen (' + b.cost + ' Münzen)');
+          this.interactionZone = {type:'shop_horse', breedIdx: sl.breedIdx};
+        }
+        return;
+      }
+    }
+    // Shop: Equipment an der Wand
+    for (let i = 0; i < SHOP_EQUIP_SLOTS.length; i++) {
+      const sl = SHOP_EQUIP_SLOTS[i];
+      const dx = p.x - sl.wx, dy = p.y - sl.wy;
+      if (Math.sqrt(dx*dx+dy*dy) < 80) {
+        const item = EQUIPMENT_ITEMS[sl.cat][sl.itemIdx];
+        UI.showPrompt('E: ' + item.name + ' kaufen (' + item.cost + ' Münzen)');
+        this.interactionZone = {type:'shop_equip', cat: sl.cat, itemIdx: sl.itemIdx};
+        return;
+      }
+    }
+    // Maria am Tresen
+    if (pr>=23&&pr<=24&&pc>=53&&pc<=56) {
+      UI.showPrompt('E: Maria ansprechen');
+      this.interactionZone = {type:'shopkeeper'};
       return;
     }
 
@@ -1917,7 +1969,26 @@ const Game = {
     if (document.getElementById('panel').style.display==='block') { UI.closePanel(); return; }
     if (!this.interactionZone) return;
     const z=this.interactionZone;
-    if (z.type==='shop') UI.showShop();
+    if (z.type==='shop_horse') {
+      const b = BREEDS[z.breedIdx];
+      const owned = this.player.horses.some(h => h.breed === b.name);
+      if (owned) { UI.notify('Du hast bereits einen ' + b.name + '!'); return; }
+      if (!Economy.spend(b.cost)) { UI.notify('Nicht genug Münzen! (' + b.cost + ' benötigt)'); return; }
+      const h = new Horse(z.breedIdx, b.name);
+      h.x = this.player.x + TILE; h.y = this.player.y;
+      this.player.horses.push(h);
+      UI.notify(b.name + ' gekauft! 🐴');
+      if (this.player.horses.length === 1) { this.player.activeHorse = h; UI.notify('Aufgesessen auf ' + h.name + '!'); }
+    }
+    else if (z.type==='shop_equip') {
+      const item = EQUIPMENT_ITEMS[z.cat][z.itemIdx];
+      if (!Economy.spend(item.cost)) { UI.notify('Nicht genug Münzen! (' + item.cost + ' benötigt)'); return; }
+      this.player.inventory[z.cat].push(item);
+      UI.notify(item.name + ' gekauft! ✅');
+    }
+    else if (z.type==='shopkeeper') {
+      UI.notify('💬 Maria: "Guten Tag! Wie kann ich weiter helfen?"');
+    }
     else if (z.type==='stall') UI.showStallMenu(z.stallId);
     else if (z.type==='arena') Training.start();
     else if (z.type==='trail') TrailRide.start();
@@ -2231,10 +2302,29 @@ const Game = {
       }
     }
 
-    // Shopkeeper
+    // Shopkeeper (Maria hinter Tresen)
     const skpos = worldToScreen(this.shopkeeper.x, this.shopkeeper.y);
     const sktile = tileToScreen(Math.floor(this.shopkeeper.x/TILE), Math.floor(this.shopkeeper.y/TILE));
     objects.push({ depth: sktile.y, subDepth: 1, type: 'shopkeeper', sx: skpos.x, sy: skpos.y });
+
+    // Shop-Pferde physisch in Boxen
+    for (let i = 0; i < SHOP_HORSE_SLOTS.length; i++) {
+      const sl = SHOP_HORSE_SLOTS[i];
+      const spos = worldToScreen(sl.wx, sl.wy);
+      if (spos.x > -120 && spos.x < CANVAS_W + 120) {
+        const stile = tileToScreen(sl.tc, sl.tr);
+        objects.push({depth: stile.y, subDepth: 0.85, type:'shopHorse', breedIdx:sl.breedIdx, sx:spos.x, sy:spos.y});
+      }
+    }
+    // Shop-Equipment an der rechten Wand
+    for (let i = 0; i < SHOP_EQUIP_SLOTS.length; i++) {
+      const sl = SHOP_EQUIP_SLOTS[i];
+      const spos = worldToScreen(sl.wx, sl.wy);
+      if (spos.x > -120 && spos.x < CANVAS_W + 120) {
+        const stile = tileToScreen(sl.tc, sl.tr);
+        objects.push({depth: stile.y, subDepth: 0.5, type:'shopEquip', cat:sl.cat, itemIdx:sl.itemIdx, sx:spos.x, sy:spos.y});
+      }
+    }
 
     // Eingestallte Pferde in den Boxen
     for (let i = 0; i < 6; i++) {
@@ -2376,6 +2466,64 @@ const Game = {
         ctx.fillRect(obj.sx - skw/2 - 4, obj.sy - 80, skw+8, 17);
         ctx.fillStyle = '#FFD700'; ctx.textAlign = 'center';
         ctx.fillText('Maria', obj.sx, obj.sy - 67);
+        ctx.textAlign = 'left';
+      } else if (obj.type === 'shopHorse') {
+        const b = BREEDS[obj.breedIdx];
+        const owned = p.horses.some(h => h.breed === b.name);
+        // Stallbox-Rahmen (Holzwände der Box)
+        ctx.fillStyle = '#6B3A1F';
+        ctx.fillRect(obj.sx - 26, obj.sy - 2, 52, 6);
+        ctx.fillRect(obj.sx - 26, obj.sy - 22, 52, 5);
+        ctx.fillRect(obj.sx - 26, obj.sy - 22, 5, 22);
+        ctx.fillRect(obj.sx + 21, obj.sy - 22, 5, 22);
+        // Innenboden der Box
+        ctx.fillStyle = 'rgba(180,130,70,0.25)';
+        ctx.fillRect(obj.sx - 21, obj.sy - 17, 42, 15);
+        // Pferd zeichnen
+        drawHorse(ctx, obj.sx, obj.sy - 10, b.color, 'down', 0, {}, 0.8);
+        // Namensschild (braune Tafel oben an der Box)
+        const bname = b.name;
+        const bprice = b.cost + ' M';
+        const bnw = Math.max(ctx.measureText(bname).width, ctx.measureText(bprice).width);
+        ctx.fillStyle = owned ? '#1a4a1a' : '#4a2800';
+        ctx.fillRect(obj.sx - bnw/2 - 5, obj.sy - 88, bnw + 10, 30);
+        ctx.strokeStyle = owned ? '#2d8a2d' : '#8B5C1A';
+        ctx.lineWidth = 1.5; ctx.strokeRect(obj.sx - bnw/2 - 5, obj.sy - 88, bnw + 10, 30);
+        ctx.fillStyle = owned ? '#90EE90' : '#FFD700';
+        ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(bname, obj.sx, obj.sy - 74);
+        ctx.fillStyle = owned ? '#90EE90' : '#FFF';
+        ctx.font = '9px sans-serif';
+        ctx.fillText(owned ? '✓ Besitz' : bprice, obj.sx, obj.sy - 63);
+        ctx.textAlign = 'left';
+      } else if (obj.type === 'shopEquip') {
+        const item = EQUIPMENT_ITEMS[obj.cat][obj.itemIdx];
+        const icons = {saddles:'🎠', bridles:'🎯', blankets:'🛡️'};
+        // Wandhalter (Holzhaken)
+        ctx.fillStyle = '#5C3317';
+        ctx.fillRect(obj.sx - 18, obj.sy - 48, 36, 5);
+        ctx.fillRect(obj.sx - 3, obj.sy - 43, 6, 14);
+        // Artikel-Farbblock (symbolisiert Sattel / Trense / Decke)
+        ctx.fillStyle = item.color;
+        const shapes = {saddles:[[-16,-29,32,18]], bridles:[[-12,-29,24,14]], blankets:[[-16,-29,32,16]]};
+        const shape = (shapes[obj.cat]||shapes.saddles)[0];
+        ctx.fillRect(obj.sx + shape[0], obj.sy + shape[1], shape[2], shape[3]);
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1;
+        ctx.strokeRect(obj.sx + shape[0], obj.sy + shape[1], shape[2], shape[3]);
+        // Glanzlicht
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.fillRect(obj.sx + shape[0]+2, obj.sy + shape[1]+2, shape[2]-4, 4);
+        // Namensschild
+        ctx.font = '9px sans-serif';
+        const iname = item.name;
+        const iprice = item.cost + ' M';
+        const inw = Math.max(ctx.measureText(iname).width, ctx.measureText(iprice).width);
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.fillRect(obj.sx - inw/2 - 4, obj.sy - 62, inw + 8, 28);
+        ctx.fillStyle = '#FFD700'; ctx.textAlign = 'center';
+        ctx.fillText(iname, obj.sx, obj.sy - 49);
+        ctx.fillStyle = '#ddd';
+        ctx.fillText(iprice, obj.sx, obj.sy - 39);
         ctx.textAlign = 'left';
       } else if (obj.type === 'stabledHorse') {
         drawHorse(ctx, obj.sx, obj.sy, obj.horse.color, 'down', 0, obj.horse.equipment);
