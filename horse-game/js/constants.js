@@ -1,4 +1,4 @@
-export const VERSION = '2026.06.2';
+export const VERSION = '2026.06.3';
 
 export const TILE = 48;
 export const ISO_W = 96;
