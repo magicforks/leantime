@@ -32,7 +32,7 @@ export const Input = {
     }
     if (k==='tab') { e.preventDefault(); UI.toggleInventory(); }
     if (k===' ') Game.actionPress();
-    if (k==='c') { setCamAngle(0); setCamPitchH(ISO_H/2); setCamZoom(1.0); UI.notify('Kamera zurückgesetzt'); }
+    if (k==='c') { setCamAngle(0); setCamPitchH(ISO_H * 5 / 12); setCamZoom(1.0); UI.notify('Kamera zurückgesetzt'); }
     if (k==='q') { setCamAngle(camAngle - Math.PI/2); }
     if (k==='r') { setCamAngle(camAngle + Math.PI/2); }
   },

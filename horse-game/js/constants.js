@@ -1,3 +1,5 @@
+export const VERSION = '2026.06.2';
+
 export const TILE = 48;
 export const ISO_W = 96;
 export const ISO_H = 48;

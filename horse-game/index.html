@@ -61,6 +61,7 @@ canvas { display: block; border: 2px solid #4A7C2F; }
 #horseMenu .hm-title { color: #FFD700; font-weight: bold; font-size: 13px; padding: 4px 12px 6px; border-bottom: 1px solid #4a3010; margin-bottom: 3px; }
 #horseMenu button { display: block; width: 100%; text-align: left; background: none; border: none; color: #e0c888; padding: 6px 14px; font-size: 12px; cursor: pointer; font-family: 'Segoe UI', sans-serif; }
 #horseMenu button:hover { background: rgba(180,120,40,0.3); color: #FFD700; }
+#versionDisplay { position: absolute; bottom: 8px; right: 10px; font-size: 10px; color: rgba(255,255,255,0.35); pointer-events: none; letter-spacing: 0.5px; font-family: monospace; }
 </style>
 </head>
 <body>
@@ -74,6 +75,7 @@ canvas { display: block; border: 2px solid #4A7C2F; }
     <div id="statusBar"></div>
     <div id="cameraHint">Rechtsklick + Ziehen = Kamera drehen/neigen &nbsp;|&nbsp; Scrollrad = Zoom &nbsp;|&nbsp; Q/R = 90° Drehen &nbsp;|&nbsp; C = Reset</div>
     <div id="horseMenu"></div>
+    <div id="versionDisplay"></div>
   </div>
   <div id="panel">
     <button class="close-btn" id="panelClose">✕</button>

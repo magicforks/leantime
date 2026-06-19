@@ -1,7 +1,7 @@
 import { ISO_W, ISO_H, TILE, CANVAS_W, CANVAS_H, WORLD_W, WORLD_H } from './constants.js';
 
 let camAngle = 0;           // Azimuth in radians (0 = original SW view)
-let camPitchH = ISO_H / 2; // Effective tile half-height — controls vertical tilt (pitch)
+let camPitchH = ISO_H * 5 / 12; // Effective tile half-height — ~20px gives overhead view like Star Stable
 let camZoom = 1.0;          // Zoom factor
 
 export function setCamAngle(v) { camAngle = v; }
